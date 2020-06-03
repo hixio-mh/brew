@@ -709,86 +709,74 @@ module Homebrew
     end
 
     def audit_revision_and_version_scheme
+      return if @new_formula
+      return unless @strict
       return unless formula.tap # skip formula not from core or any taps
       return unless formula.tap.git? # git log is required
-      return if @new_formula
+      return if formula.stable.blank?
 
       fv = FormulaVersions.new(formula)
 
-      previous_version_and_checksum = fv.previous_version_and_checksum("origin/master")
-      [:stable, :devel].each do |spec_sym|
-        next unless spec = formula.send(spec_sym)
-        next unless previous_version_and_checksum[spec_sym][:version] == spec.version
-        next if previous_version_and_checksum[spec_sym][:checksum] == spec.checksum
+      current_version = formula.stable.version
+      current_version_scheme = formula.version_scheme
+      current_revision = formula.revision
 
+      previous_version = nil
+      previous_checksum = nil
+      previous_version_scheme = nil
+      previous_revision = nil
+
+      fv.rev_list("origin/master") do |rev|
+        fv.formula_at_revision(rev) do |f|
+          stable = f.stable
+          next if stable.blank?
+
+          previous_version = stable.version
+          previous_checksum = stable.checksum
+
+          if (version_scheme = f.version_scheme) && current_version_scheme != version_scheme
+            previous_version_scheme = version_scheme
+          end
+
+          if (revision = f.revision) && current_revision != revision
+            previous_revision = revision
+          end
+        end
+
+        break if previous_version && previous_checksum
+      end
+
+      if previous_version &&
+         (stable = formula.stable) &&
+         previous_version == stable.version &&
+         previous_checksum != stable.checksum
         problem(
-          "#{spec_sym}: sha256 changed without the version also changing; " \
+          "stable sha256 changed without the version also changing; " \
           "please create an issue upstream to rule out malicious " \
           "circumstances and to find out why the file changed.",
         )
       end
 
-      attributes = [:revision, :version_scheme]
-      attributes_map = fv.version_attributes_map(attributes, "origin/master")
-
-      current_version_scheme = formula.version_scheme
-      [:stable, :devel].each do |spec|
-        spec_version_scheme_map = attributes_map[:version_scheme][spec]
-        next if spec_version_scheme_map.empty?
-
-        version_schemes = spec_version_scheme_map.values.flatten
-        max_version_scheme = version_schemes.max
-        max_version = spec_version_scheme_map.select do |_, version_scheme|
-          version_scheme.first == max_version_scheme
-        end.keys.max
-
-        if max_version_scheme && current_version_scheme < max_version_scheme
-          problem "version_scheme should not decrease (from #{max_version_scheme} to #{current_version_scheme})"
-        end
-
-        if max_version_scheme && current_version_scheme >= max_version_scheme &&
-           current_version_scheme > 1 &&
-           !version_schemes.include?(current_version_scheme - 1)
+      if previous_version_scheme
+        if current_version_scheme < previous_version_scheme
+          problem "version_scheme should not decrease (from #{previous_version_scheme} to #{current_version_scheme})"
+        elsif current_version_scheme > (previous_version_scheme + 1)
           problem "version_schemes should only increment by 1"
         end
-
-        formula_spec = formula.send(spec)
-        next unless formula_spec
-
-        spec_version = formula_spec.version
-        next unless max_version
-        next if spec_version >= max_version
-
-        above_max_version_scheme = current_version_scheme > max_version_scheme
-        map_includes_version = spec_version_scheme_map.key?(spec_version)
-        next if !current_version_scheme.zero? &&
-                (above_max_version_scheme || map_includes_version)
-
-        problem "#{spec} version should not decrease (from #{max_version} to #{spec_version})"
       end
 
-      current_revision = formula.revision
-      revision_map = attributes_map[:revision][:stable]
-      if formula.stable && !revision_map.empty?
-        stable_revisions = revision_map[formula.stable.version]
-        stable_revisions ||= []
-        max_revision = stable_revisions.max || 0
+      if previous_version && current_version < previous_version
+        problem "stable version should not decrease (from #{previous_version} to #{current_version})"
+      end
 
-        if current_revision < max_revision
-          problem "revision should not decrease (from #{max_revision} to #{current_revision})"
-        end
+      return unless previous_revision
 
-        stable_revisions -= [formula.revision]
-        if !current_revision.zero? && stable_revisions.empty? &&
-           revision_map.keys.length > 1
-          problem "'revision #{formula.revision}' should be removed"
-        elsif current_revision > 1 &&
-              current_revision != max_revision &&
-              !stable_revisions.include?(current_revision - 1)
-          problem "revisions should only increment by 1"
-        end
-      elsif !current_revision.zero? # head/devel-only formula
-        problem "'revision #{current_revision}' should be removed"
+      if !current_revision.zero? && current_version != previous_version
+        problem "'revision #{formula.revision}' should be removed"
+      elsif !current_revision.zero? && current_revision < previous_revision
+        problem "revision should not decrease (from #{previous_revision} to #{current_revision})"
+      elsif current_revision > (previous_revision + 1)
+        problem "revisions should only increment by 1"
       end
     end
 
