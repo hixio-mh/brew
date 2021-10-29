@@ -225,6 +225,13 @@ module GitHub
     API.open_rest(url, request_method: :GET)
   end
 
+  def generate_release_notes(user, repo, tag, previous_tag: nil)
+    url = "#{API_URL}/repos/#{user}/#{repo}/releases/generate-notes"
+    data = { tag_name: tag }
+    data[:previous_tag_name] = previous_tag if previous_tag.present?
+    API.open_rest(url, data: data, request_method: :POST, scopes: CREATE_ISSUE_FORK_OR_PR_SCOPES)
+  end
+
   def create_or_update_release(user, repo, tag, id: nil, name: nil, body: nil, draft: false)
     url = "#{API_URL}/repos/#{user}/#{repo}/releases"
     method = if id
@@ -481,7 +488,7 @@ module GitHub
       changed_files = [sourcefile_path]
       changed_files += additional_files if additional_files.present?
 
-      if args.dry_run? || (args.write? && !args.commit?)
+      if args.dry_run? || (args.write_only? && !args.commit?)
         remote_url = if args.no_fork?
           Utils.popen_read("git", "remote", "get-url", "--push", "origin").chomp
         else

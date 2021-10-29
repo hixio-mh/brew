@@ -45,7 +45,7 @@ When automatic `brew cleanup` is disabled, if you uninstall a formula, it will o
 
 In this case, to remove a formula entirely, you may run `brew uninstall --force <formula>`. Be careful as this is a destructive operation.
 
-## Why does `brew upgrade <formula>` also upgrade a bunch of other stuff?
+## Why does `brew upgrade <formula>` or `brew install <formula>` also upgrade a bunch of other stuff?
 Homebrew doesn't support arbitrary mixing and matching of formula versions, so everything a formula depends on, and everything that depends on it in turn, needs to be upgraded to the latest version as that's the only combination of formulae we test. As a consequence any given `upgrade` or `install` command can upgrade many other (seemingly unrelated) formulae, if something important like `python` or `openssl` also needed an upgrade.
 
 ## Where does stuff get downloaded?
@@ -55,7 +55,7 @@ Homebrew doesn't support arbitrary mixing and matching of formula versions, so e
 Which is usually: `~/Library/Caches/Homebrew`
 
 ## My Mac `.app`s don’t find Homebrew utilities!
-GUI apps on macOS don’t have Homebrew's prefix in their `PATH` by default. If you're on Mountain Lion or later, you can fix this by running `sudo launchctl config user path "$(brew --prefix)/bin:$PATH"` and then rebooting, as documented in `man launchctl`. Note that this sets the launchctl `PATH` for *all users*. For earlier versions of macOS, see [this page](https://developer.apple.com/legacy/library/qa/qa1067/_index.html).
+GUI apps on macOS don’t have Homebrew's prefix in their `PATH` by default. If you're on Mountain Lion or later, you can fix this by running `sudo launchctl config user path "$(brew --prefix)/bin:${PATH}"` and then rebooting, as documented in `man launchctl`. Note that this sets the launchctl `PATH` for *all users*. For earlier versions of macOS, see [this page](https://developer.apple.com/legacy/library/qa/qa1067/_index.html).
 
 ## How do I contribute to Homebrew?
 Read our [contribution guidelines](https://github.com/Homebrew/brew/blob/HEAD/CONTRIBUTING.md#contributing-to-homebrew).
@@ -84,7 +84,7 @@ We aim to bottle everything.
 ```sh
 brew install hub
 brew update
-cd $(brew --repository)
+cd "$(brew --repository)"
 hub pull someone_else
 ```
 

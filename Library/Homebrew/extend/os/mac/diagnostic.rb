@@ -70,6 +70,7 @@ module Homebrew
 
       def fatal_setup_build_environment_checks
         %w[
+          check_xcode_minimum_version
           check_clt_minimum_version
           check_if_supported_sdk_available
         ].freeze
@@ -106,6 +107,7 @@ module Homebrew
 
       def check_for_unsupported_macos
         return if Homebrew::EnvConfig.developer?
+        return if ENV["HOMEBREW_INTEGRATION_TEST"]
 
         who = +"We"
         what = if OS::Mac.version.prerelease?
@@ -199,12 +201,19 @@ module Homebrew
       end
 
       def check_ruby_version
-        return if RUBY_VERSION == HOMEBREW_REQUIRED_RUBY_VERSION
+        # TODO: require 2.6.8 for everyone once enough have updated to Monterey
+        required_version = if MacOS.version >= :monterey ||
+                              ENV["HOMEBREW_RUBY_PATH"].to_s.include?("/vendor/portable-ruby/")
+          "2.6.8"
+        else
+          HOMEBREW_REQUIRED_RUBY_VERSION
+        end
+        return if RUBY_VERSION == required_version
         return if Homebrew::EnvConfig.developer? && OS::Mac.version.prerelease?
 
         <<~EOS
-          Ruby version #{RUBY_VERSION} is unsupported on #{MacOS.version}. Homebrew
-          is developed and tested on Ruby #{HOMEBREW_REQUIRED_RUBY_VERSION}, and may not work correctly
+          Ruby version #{RUBY_VERSION} is unsupported on macOS #{MacOS.version}. Homebrew
+          is developed and tested on Ruby #{required_version}, and may not work correctly
           on other Rubies. Patches are accepted as long as they don't cause breakage
           on supported Rubies.
         EOS

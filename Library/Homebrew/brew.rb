@@ -77,35 +77,16 @@ begin
   path = PATH.new(ENV["PATH"])
   homebrew_path = PATH.new(ENV["HOMEBREW_PATH"])
 
-  # Add SCM wrappers.
-  path.prepend(HOMEBREW_SHIMS_PATH/"scm")
-  homebrew_path.prepend(HOMEBREW_SHIMS_PATH/"scm")
+  # Add shared wrappers.
+  path.prepend(HOMEBREW_SHIMS_PATH/"shared")
+  homebrew_path.prepend(HOMEBREW_SHIMS_PATH/"shared")
 
   ENV["PATH"] = path
 
   require "commands"
   require "settings"
 
-  if cmd
-    internal_cmd = Commands.valid_internal_cmd?(cmd)
-    internal_cmd ||= begin
-      internal_dev_cmd = Commands.valid_internal_dev_cmd?(cmd)
-      if internal_dev_cmd && !Homebrew::EnvConfig.developer?
-        if ENV["HOMEBREW_DEV_CMD_RUN"].blank?
-          opoo <<~MESSAGE
-            #{Tty.bold}#{cmd}#{Tty.reset} is a developer command, so
-            Homebrew's developer mode has been automatically turned on.
-            To turn developer mode off, run #{Tty.bold}brew developer off#{Tty.reset}
-
-          MESSAGE
-        end
-
-        Homebrew::Settings.write "devcmdrun", true
-        ENV["HOMEBREW_DEV_CMD_RUN"] = "1"
-      end
-      internal_dev_cmd
-    end
-  end
+  internal_cmd = Commands.valid_internal_cmd?(cmd) || Commands.valid_internal_dev_cmd?(cmd) if cmd
 
   unless internal_cmd
     # Add contributed commands to PATH before checking.

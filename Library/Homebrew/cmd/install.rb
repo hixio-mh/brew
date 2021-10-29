@@ -139,9 +139,11 @@ module Homebrew
 
     args.named.each do |name|
       next if File.exist?(name)
-      next if name !~ HOMEBREW_TAP_FORMULA_REGEX && name !~ HOMEBREW_CASK_TAP_CASK_REGEX
+      next unless name =~ HOMEBREW_TAP_FORMULA_REGEX
 
       tap = Tap.fetch(Regexp.last_match(1), Regexp.last_match(2))
+      next if (tap.core_tap? || tap == "homebrew/cask") && EnvConfig.install_from_api?
+
       tap.install unless tap.installed?
     end
 
@@ -172,6 +174,7 @@ module Homebrew
         require_sha:    args.require_sha?,
         skip_cask_deps: args.skip_cask_deps?,
         quarantine:     args.quarantine?,
+        quiet:          args.quiet?,
       )
     end
 

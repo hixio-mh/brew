@@ -150,13 +150,18 @@ class FormulaInstaller
       return false
     end
 
-    bottle = formula.bottle_specification
+    return true if formula.local_bottle_path.present?
+
+    bottle = formula.bottle_for_tag(Utils::Bottles.tag.to_sym)
+    return false if bottle.nil?
+
     unless bottle.compatible_locations?
       if output_warning
+        prefix = Pathname(bottle.cellar).parent
         opoo <<~EOS
           Building #{formula.full_name} from source as the bottle needs:
           - HOMEBREW_CELLAR: #{bottle.cellar} (yours is #{HOMEBREW_CELLAR})
-          - HOMEBREW_PREFIX: #{bottle.prefix} (yours is #{HOMEBREW_PREFIX})
+          - HOMEBREW_PREFIX: #{prefix} (yours is #{HOMEBREW_PREFIX})
         EOS
       end
       return false
@@ -218,17 +223,18 @@ class FormulaInstaller
     raise
   end
 
-  def check_install_sanity
+  def check_installation_already_attempted
     raise FormulaInstallationAlreadyAttemptedError, formula if self.class.attempted.include?(formula)
+  end
+
+  def check_install_sanity
+    check_installation_already_attempted
 
     if force_bottle? && !pour_bottle?
       raise CannotInstallFormulaError, "--force-bottle passed but #{formula.full_name} has no bottle!"
     end
 
     if Homebrew.default_prefix? &&
-       # TODO: re-enable this on Linux when we merge linuxbrew-core into
-       # homebrew-core and have full bottle coverage.
-       (OS.mac? || ENV["CI"]) &&
        !build_from_source? && !build_bottle? && !formula.head? &&
        formula.tap&.core_tap? && !formula.bottle_unneeded? &&
        # Integration tests override homebrew-core locations
@@ -358,7 +364,7 @@ class FormulaInstaller
     raise UnbottledError, [formula] if !pour_bottle? && !formula.bottle_unneeded? && !DevelopmentTools.installed?
 
     unless ignore_deps?
-      deps = compute_dependencies
+      deps = compute_dependencies(use_cache: false)
       if ((pour_bottle? && !DevelopmentTools.installed?) || build_bottle?) &&
          (unbottled = unbottled_dependencies(deps)).presence
         # Check that each dependency in deps has a bottle available, terminating
@@ -475,7 +481,8 @@ class FormulaInstaller
 
   # Compute and collect the dependencies needed by the formula currently
   # being installed.
-  def compute_dependencies
+  def compute_dependencies(use_cache: true)
+    @compute_dependencies = nil unless use_cache
     @compute_dependencies ||= begin
       check_requirements(expand_requirements)
       expand_dependencies
@@ -580,7 +587,9 @@ class FormulaInstaller
       end
     end
 
-    if pour_bottle && !Keg.bottle_dependencies.empty?
+    # We require some dependencies (glibc, GCC 5, etc.) if binaries were built.
+    # Native binaries shouldn't exist in cross-platform `all` bottles.
+    if pour_bottle && !formula.bottled?(:all) && !Keg.bottle_dependencies.empty?
       bottle_deps = if Keg.bottle_dependencies.exclude?(formula.name)
         Keg.bottle_dependencies
       elsif Keg.relocation_formulae.exclude?(formula.name)
@@ -785,6 +794,13 @@ class FormulaInstaller
 
     # let's reset Utils::Git.available? if we just installed git
     Utils::Git.clear_available_cache if formula.name == "git"
+
+    # use installed ca-certificates when it's needed and available
+    if formula.name == "ca-certificates" &&
+       !DevelopmentTools.ca_file_handles_most_https_certificates?
+      ENV["SSL_CERT_FILE"] = ENV["GIT_SSL_CAINFO"] = formula.pkgetc/"cert.pem"
+      ENV["GIT_SSL_CAPATH"] = formula.pkgetc
+    end
 
     # use installed curl when it's needed and available
     if formula.name == "curl" &&
@@ -1194,12 +1210,6 @@ class FormulaInstaller
       problem_if_output(check_env_path(formula.sbin))
     end
     super
-  end
-
-  # This is a stub for calls made to this method at install time.
-  # Exceptions are correctly identified when doing `brew audit`.
-  def tap_audit_exception(*)
-    true
   end
 
   def self.locked

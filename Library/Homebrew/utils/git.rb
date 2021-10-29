@@ -30,7 +30,7 @@ module Utils
     def git
       return @git if defined?(@git)
 
-      @git = HOMEBREW_SHIMS_PATH/"scm/git"
+      @git = HOMEBREW_SHIMS_PATH/"shared/git"
     end
 
     def remote_exists?(url)
@@ -123,10 +123,11 @@ module Utils
     end
 
     def setup_gpg!
-      return unless Formula["gnupg"].optlinked?
+      gnupg_bin = HOMEBREW_PREFIX/"opt/gnupg/bin"
+      return unless gnupg_bin.directory?
 
       ENV["PATH"] = PATH.new(ENV["PATH"])
-                        .prepend(Formula["gnupg"].opt_bin)
+                        .prepend(gnupg_bin)
     end
 
     # Special case of `git cherry-pick` that permits non-verbose output and

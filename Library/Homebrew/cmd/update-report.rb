@@ -9,6 +9,7 @@ require "cleanup"
 require "description_cache_store"
 require "cli/parser"
 require "settings"
+require "linuxbrew-core-migration"
 
 module Homebrew
   extend T::Sig
@@ -40,6 +41,40 @@ module Homebrew
 
   def update_report
     args = update_report_args.parse
+
+    # Run `brew update` (again) if we've got a linuxbrew-core CoreTap
+    if CoreTap.instance.installed? && CoreTap.instance.linuxbrew_core? &&
+       ENV["HOMEBREW_LINUXBREW_CORE_MIGRATION"].blank?
+      ohai_stdout_or_stderr "Re-running `brew update` for linuxbrew-core migration"
+
+      if ENV["HOMEBREW_CORE_DEFAULT_GIT_REMOTE"] != ENV["HOMEBREW_CORE_GIT_REMOTE"]
+        opoo <<~EOS
+          HOMEBREW_CORE_GIT_REMOTE was set: #{ENV["HOMEBREW_CORE_GIT_REMOTE"]}.
+          It has been unset for the migration.
+          You may need to change this from a linuxbrew-core mirror to a homebrew-core one.
+
+        EOS
+      end
+      ENV.delete("HOMEBREW_CORE_GIT_REMOTE")
+
+      if ENV["HOMEBREW_BOTTLE_DEFAULT_DOMAIN"] != ENV["HOMEBREW_BOTTLE_DOMAIN"]
+        opoo <<~EOS
+          HOMEBREW_BOTTLE_DOMAIN was set: #{ENV["HOMEBREW_BOTTLE_DOMAIN"]}.
+          It has been unset for the migration.
+          You may need to change this from a Linuxbrew package mirror to a Homebrew one.
+
+        EOS
+      end
+      ENV.delete("HOMEBREW_BOTTLE_DOMAIN")
+
+      ENV["HOMEBREW_LINUXBREW_CORE_MIGRATION"] = "1"
+      FileUtils.rm_f HOMEBREW_LOCKS/"update"
+
+      update_args = []
+      update_args << "--preinstall" if args.preinstall?
+      update_args << "--force" if args.force?
+      exec HOMEBREW_BREW_FILE, "update", *update_args
+    end
 
     if !Utils::Analytics.messages_displayed? &&
        !Utils::Analytics.disabled? &&
@@ -102,7 +137,29 @@ module Homebrew
     updated_taps = []
     Tap.each do |tap|
       next unless tap.git?
-      next if tap.core_tap? && ENV["HOMEBREW_INSTALL_FROM_API"].present? && args.preinstall?
+      next if (tap.core_tap? || tap == "homebrew/cask") && Homebrew::EnvConfig.install_from_api? && args.preinstall?
+
+      if ENV["HOMEBREW_MIGRATE_LINUXBREW_FORMULAE"].present? && tap.core_tap? &&
+         Settings.read("linuxbrewmigrated") != "true"
+        ohai_stdout_or_stderr "Migrating formulae from linuxbrew-core to homebrew-core"
+
+        LINUXBREW_CORE_MIGRATION_LIST.each do |name|
+          begin
+            formula = Formula[name]
+          rescue FormulaUnavailableError
+            next
+          end
+          next unless formula.any_version_installed?
+
+          keg = formula.installed_kegs.last
+          tab = Tab.for_keg(keg)
+          # force a `brew upgrade` from the linuxbrew-core version to the homebrew-core version (even if lower)
+          tab.source["versions"]["version_scheme"] = -1
+          tab.write
+        end
+
+        Settings.write "linuxbrewmigrated", true
+      end
 
       begin
         reporter = Reporter.new(tap)
@@ -162,7 +219,7 @@ module Homebrew
         end
       end
       puts_stdout_or_stderr if args.preinstall?
-    elsif !args.preinstall? && !ENV["HOMEBREW_UPDATE_FAILED"]
+    elsif !args.preinstall? && !ENV["HOMEBREW_UPDATE_FAILED"] && !ENV["HOMEBREW_MIGRATE_LINUXBREW_FORMULAE"]
       puts_stdout_or_stderr "Already up-to-date." unless args.quiet?
     end
 
@@ -208,7 +265,7 @@ module Homebrew
 
   def install_core_tap_if_necessary
     return if ENV["HOMEBREW_UPDATE_TEST"]
-    return if ENV["HOMEBREW_INSTALL_FROM_API"].present?
+    return if Homebrew::EnvConfig.install_from_api?
 
     core_tap = CoreTap.instance
     return if core_tap.installed?
