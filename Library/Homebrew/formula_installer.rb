@@ -114,6 +114,15 @@ class FormulaInstaller
     @installed = Set.new
   end
 
+  def self.fetched
+    @fetched ||= Set.new
+  end
+
+  sig { void }
+  def self.clear_fetched
+    @fetched = Set.new
+  end
+
   sig { returns(T::Boolean) }
   def build_from_source?
     @build_from_source_formulae.include?(formula.full_name)
@@ -206,12 +215,18 @@ class FormulaInstaller
     forbidden_license_check
 
     check_install_sanity
+    install_fetch_deps unless ignore_deps?
   end
 
   sig { void }
   def verify_deps_exist
     begin
       compute_dependencies
+    rescue CoreTapFormulaUnavailableError => e
+      raise unless Homebrew::API::Bottle.available? e.name
+
+      Homebrew::API::Bottle.fetch_bottles(e.name)
+      retry
     rescue TapFormulaUnavailableError => e
       raise if e.tap.installed?
 
@@ -327,6 +342,19 @@ class FormulaInstaller
     raise CannotInstallFormulaError,
           "You must `brew unpin #{pinned_unsatisfied_deps * " "}` as installing " \
           "#{formula.full_name} requires the latest version of pinned dependencies"
+  end
+
+  sig { void }
+  def install_fetch_deps
+    return if @compute_dependencies.blank?
+
+    compute_dependencies(use_cache: false) if @compute_dependencies.any? do |dep, options|
+      next false unless dep.tags == [:build, :test]
+
+      fetch_dependencies
+      install_dependency(dep, options)
+      true
+    end
   end
 
   def build_bottle_preinstall
@@ -1015,6 +1043,12 @@ class FormulaInstaller
       service_path = formula.systemd_service_path
       service_path.atomic_write(formula.service.to_systemd_unit)
       service_path.chmod 0644
+
+      if formula.service.timed?
+        timer_path = formula.systemd_timer_path
+        timer_path.atomic_write(formula.service.to_systemd_timer)
+        timer_path.chmod 0644
+      end
     end
 
     service = if formula.service?
@@ -1136,6 +1170,8 @@ class FormulaInstaller
 
   sig { void }
   def fetch
+    return if self.class.fetched.include?(formula)
+
     fetch_dependencies
 
     return if only_deps?
@@ -1147,6 +1183,8 @@ class FormulaInstaller
       formula.resources.each(&:fetch)
     end
     downloader.fetch
+
+    self.class.fetched << formula
   end
 
   def downloader
@@ -1270,7 +1308,8 @@ class FormulaInstaller
       next unless SPDX.licenses_forbid_installation? dep_f.license, forbidden_licenses
 
       raise CannotInstallFormulaError, <<~EOS
-        The installation of #{formula.name} has a dependency on #{dep.name} where all its licenses are forbidden:
+        The installation of #{formula.name} has a dependency on #{dep.name} where all
+        its licenses are forbidden by HOMEBREW_FORBIDDEN_LICENSES:
           #{SPDX.license_expression_to_string dep_f.license}.
       EOS
     end
@@ -1280,7 +1319,8 @@ class FormulaInstaller
     return unless SPDX.licenses_forbid_installation? formula.license, forbidden_licenses
 
     raise CannotInstallFormulaError, <<~EOS
-      #{formula.name}'s licenses are all forbidden: #{SPDX.license_expression_to_string formula.license}.
+      #{formula.name}'s licenses are all forbidden by HOMEBREW_FORBIDDEN_LICENSES:
+        #{SPDX.license_expression_to_string formula.license}.
     EOS
   end
 end

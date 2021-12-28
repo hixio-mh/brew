@@ -167,6 +167,8 @@ module Homebrew
           raise TapFormulaOrCaskUnavailableError.new(tap, short_name)
         end
 
+        raise NoSuchKegError, name if resolve_formula(name)
+
         raise FormulaOrCaskUnavailableError, name
       end
       private :load_formula_or_cask
@@ -314,7 +316,7 @@ module Homebrew
         rack = Formulary.to_rack(name.downcase)
 
         kegs = rack.directory? ? rack.subdirs.map { |d| Keg.new(d) } : []
-        raise NoSuchKegError, rack.basename if kegs.none?
+        raise NoSuchKegError, name if kegs.none?
 
         [rack, kegs]
       end

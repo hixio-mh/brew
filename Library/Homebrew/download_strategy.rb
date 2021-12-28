@@ -520,7 +520,7 @@ class CurlDownloadStrategy < AbstractFileDownloadStrategy
 
     if Homebrew::EnvConfig.no_insecure_redirect? &&
        url.start_with?("https://") && !resolved_url.start_with?("https://")
-      $stderr.puts "HTTPS to HTTP redirect detected & HOMEBREW_NO_INSECURE_REDIRECT is set."
+      $stderr.puts "HTTPS to HTTP redirect detected and HOMEBREW_NO_INSECURE_REDIRECT is set."
       raise CurlDownloadStrategyError, url
     end
 
@@ -763,10 +763,7 @@ class SubversionDownloadStrategy < VCSDownloadStrategy
 
     args << "--ignore-externals" if ignore_externals
 
-    if meta[:trust_cert] == true
-      args << "--trust-server-cert"
-      args << "--non-interactive"
-    end
+    args.concat Utils::Svn.invalid_cert_flags if meta[:trust_cert] == true
 
     if target.directory?
       command! "svn", args: ["update", *args], chdir: target.to_s, timeout: timeout&.remaining
@@ -886,9 +883,9 @@ class GitDownloadStrategy < VCSDownloadStrategy
     case @ref_type
     when :branch, :tag
       args << "--branch" << @ref
-      args << "-c" << "advice.detachedHead=false" # silences detached head warning
     end
 
+    args << "-c" << "advice.detachedHead=false" # silences detached head warning
     args << @url << cached_location
   end
 
@@ -917,6 +914,9 @@ class GitDownloadStrategy < VCSDownloadStrategy
              chdir: cached_location
     command! "git",
              args:  ["config", "remote.origin.tagOpt", "--no-tags"],
+             chdir: cached_location
+    command! "git",
+             args:  ["config", "advice.detachedHead", "false"],
              chdir: cached_location
   end
 
@@ -1032,6 +1032,7 @@ class GitHubGitDownloadStrategy < GitDownloadStrategy
   end
 
   def github_last_commit
+    # TODO: move to Utils::GitHub
     return if Homebrew::EnvConfig.no_github_api?
 
     output, _, status = curl_output(
@@ -1048,6 +1049,7 @@ class GitHubGitDownloadStrategy < GitDownloadStrategy
   end
 
   def multiple_short_commits_exist?(commit)
+    # TODO: move to Utils::GitHub
     return if Homebrew::EnvConfig.no_github_api?
 
     output, _, status = curl_output(

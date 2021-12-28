@@ -659,7 +659,7 @@ class Tap
 
     TAP_DIRECTORY.subdirs.each do |user|
       user.subdirs.each do |repo|
-        block.call fetch(user.basename.to_s, repo.basename.to_s)
+        yield fetch(user.basename.to_s, repo.basename.to_s)
       end
     end
   end
@@ -827,7 +827,7 @@ class CoreTap < Tap
   # @private
   sig { returns(T::Boolean) }
   def linuxbrew_core?
-    remote_repo.to_s.end_with?("/linuxbrew-core")
+    remote_repo.to_s.end_with?("/linuxbrew-core") || remote_repo == "Linuxbrew/homebrew-core"
   end
 
   # @private

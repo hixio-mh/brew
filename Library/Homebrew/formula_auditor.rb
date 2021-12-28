@@ -118,6 +118,33 @@ module Homebrew
       @aliases ||= Formula.aliases + Formula.tap_aliases
     end
 
+    SYNCED_VERSIONS_FORMULAE_FILE = "synced_versions_formulae.json"
+
+    def audit_synced_versions_formulae
+      return unless formula.tap
+
+      synced_versions_formulae_file = formula.tap.path/SYNCED_VERSIONS_FORMULAE_FILE
+      return unless synced_versions_formulae_file.file?
+
+      name = formula.name
+      version = formula.version
+
+      synced_versions_formulae = JSON.parse(synced_versions_formulae_file.read)
+      synced_versions_formulae.each do |synced_version_formulae|
+        next unless synced_version_formulae.include? name
+
+        synced_version_formulae.each do |synced_formula|
+          next if synced_formula == name
+
+          if (synced_version = Formulary.factory(synced_formula).version) != version
+            problem "Version of `#{synced_formula}` (#{synced_version}) should match version of `#{name}` (#{version})"
+          end
+        end
+
+        break
+      end
+    end
+
     def audit_formula_name
       name = formula.name
 
@@ -553,7 +580,8 @@ module Homebrew
 
           ra = ResourceAuditor.new(
             resource, spec_name,
-            online: @online, strict: @strict, only: @only, except: @except
+            online: @online, strict: @strict, only: @only, except: @except,
+            use_homebrew_curl: resource.using == :homebrew_curl
           ).audit
           ra.problems.each do |message|
             problem "#{name} resource #{resource.name.inspect}: #{message}"

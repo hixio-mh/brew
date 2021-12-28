@@ -201,19 +201,12 @@ module Homebrew
       end
 
       def check_ruby_version
-        # TODO: require 2.6.8 for everyone once enough have updated to Monterey
-        required_version = if MacOS.version >= :monterey ||
-                              ENV["HOMEBREW_RUBY_PATH"].to_s.include?("/vendor/portable-ruby/")
-          "2.6.8"
-        else
-          HOMEBREW_REQUIRED_RUBY_VERSION
-        end
-        return if RUBY_VERSION == required_version
+        return if RUBY_VERSION == HOMEBREW_REQUIRED_RUBY_VERSION
         return if Homebrew::EnvConfig.developer? && OS::Mac.version.prerelease?
 
         <<~EOS
           Ruby version #{RUBY_VERSION} is unsupported on macOS #{MacOS.version}. Homebrew
-          is developed and tested on Ruby #{required_version}, and may not work correctly
+          is developed and tested on Ruby #{HOMEBREW_REQUIRED_RUBY_VERSION}, and may not work correctly
           on other Rubies. Patches are accepted as long as they don't cause breakage
           on supported Rubies.
         EOS
@@ -265,17 +258,6 @@ module Homebrew
           You have not agreed to the Xcode license.
           Agree to the license by opening Xcode.app or running:
             sudo xcodebuild -license
-        EOS
-      end
-
-      def check_xquartz_up_to_date
-        return unless MacOS::XQuartz.outdated?
-
-        <<~EOS
-          Your XQuartz (#{MacOS::XQuartz.version}) is outdated.
-          Please install XQuartz #{MacOS::XQuartz.latest_version} (or delete the current version).
-          XQuartz can be updated using Homebrew Cask by running:
-            brew reinstall xquartz
         EOS
       end
 

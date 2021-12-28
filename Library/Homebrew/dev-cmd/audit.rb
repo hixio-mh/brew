@@ -166,7 +166,7 @@ module Homebrew
     spdx_license_data = SPDX.license_data
     spdx_exception_data = SPDX.exception_data
     new_formula_problem_lines = []
-    formula_results = audit_formulae.sort.map do |f|
+    formula_results = audit_formulae.sort.to_h do |f|
       only = only_cops ? ["style"] : args.only
       options = {
         new_formula:         new_formula,
@@ -198,7 +198,7 @@ module Homebrew
       end
 
       [f.path, { errors: fa.problems + fa.new_formula_problems, warnings: [] }]
-    end.to_h
+    end
 
     cask_results = if audit_casks.empty?
       {}
@@ -206,14 +206,17 @@ module Homebrew
       require "cask/cmd/abstract_command"
       require "cask/cmd/audit"
 
+      # For switches, we add `|| nil` so that `nil` will be passed instead of `false` if they aren't set.
+      # This way, we can distinguish between "not set" and "set to false".
       Cask::Cmd::Audit.audit_casks(
         *audit_casks,
         download:              nil,
+        # No need for `|| nil` for `--[no-]appcast` because boolean switches are already `nil` if not passed
         appcast:               args.appcast?,
-        online:                args.online?,
-        strict:                args.strict?,
-        new_cask:              args.new_cask?,
-        token_conflicts:       args.token_conflicts?,
+        online:                args.online? || nil,
+        strict:                args.strict? || nil,
+        new_cask:              args.new_cask? || nil,
+        token_conflicts:       args.token_conflicts? || nil,
         quarantine:            nil,
         any_named_args:        !no_named_args,
         language:              nil,

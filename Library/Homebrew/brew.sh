@@ -6,23 +6,31 @@
 # Doesn't need a default case because we don't support other OSs
 # shellcheck disable=SC2249
 HOMEBREW_PROCESSOR="$(uname -m)"
+HOMEBREW_PHYSICAL_PROCESSOR="${HOMEBREW_PROCESSOR}"
 HOMEBREW_SYSTEM="$(uname -s)"
 case "${HOMEBREW_SYSTEM}" in
   Darwin) HOMEBREW_MACOS="1" ;;
   Linux) HOMEBREW_LINUX="1" ;;
 esac
 
-# If we're running under macOS Rosetta 2, and it was requested by setting
-# HOMEBREW_CHANGE_ARCH_TO_ARM (for example in CI), then we re-exec this
-# same file under the native architecture
-# These variables are set from the user environment.
-# shellcheck disable=SC2154
-if [[ "${HOMEBREW_CHANGE_ARCH_TO_ARM}" == "1" ]] &&
-   [[ "${HOMEBREW_MACOS}" == "1" ]] &&
-   [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]] &&
-   [[ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" == "1" ]]
+if [[ "${HOMEBREW_MACOS}" == "1" ]] &&
+   [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]
 then
-  exec arch -arm64e "${HOMEBREW_BREW_FILE}" "$@"
+  # used in vendor-install.sh
+  # shellcheck disable=SC2034
+  HOMEBREW_PHYSICAL_PROCESSOR="arm64"
+  HOMEBREW_ROSETTA="$(sysctl -n sysctl.proc_translated)"
+
+  # If we're running under macOS Rosetta 2, and it was requested by setting
+  # HOMEBREW_CHANGE_ARCH_TO_ARM (for example in CI), then we re-exec this
+  # same file under the native architecture
+  # These variables are set from the user environment.
+  # shellcheck disable=SC2154
+  if [[ "${HOMEBREW_CHANGE_ARCH_TO_ARM}" == "1" ]] &&
+     [[ "${HOMEBREW_ROSETTA}" == "1" ]]
+  then
+    exec arch -arm64e "${HOMEBREW_BREW_FILE}" "$@"
+  fi
 fi
 
 # Where we store built products; a Cellar in HOMEBREW_PREFIX (often /usr/local
@@ -222,7 +230,16 @@ EOS
 # exceeds 3 seconds.
 update-preinstall-timer() {
   sleep 3
-  echo 'Updating Homebrew...' >&2
+  # Outputting a command but don't want to run it, hence single quotes.
+  # shellcheck disable=SC2016
+  echo 'Running `brew update --preinstall`...' >&2
+  if [[ -z "${HOMEBREW_NO_ENV_HINTS}" && -z "${HOMEBREW_AUTO_UPDATE_SECS}" ]]
+  then
+    # shellcheck disable=SC2016
+    echo 'Adjust how often this is run with HOMEBREW_AUTO_UPDATE_SECS or disable with' >&2
+    # shellcheck disable=SC2016
+    echo 'HOMEBREW_NO_AUTO_UPDATE. Hide these hints with HOMEBREW_NO_ENV_HINTS (see `man brew`).' >&2
+  fi
 }
 
 # These variables are set from various Homebrew scripts.
@@ -458,9 +475,7 @@ then
 
   # Set a variable when the macOS system Ruby is new enough to avoid spawning
   # a Ruby process unnecessarily.
-  # On Catalina the system Ruby is technically new enough but don't allow it:
-  # https://github.com/Homebrew/brew/issues/9410
-  if [[ "${HOMEBREW_MACOS_VERSION_NUMERIC}" -lt "101600" ]]
+  if [[ "${HOMEBREW_MACOS_VERSION_NUMERIC}" -lt "120000" ]]
   then
     unset HOMEBREW_MACOS_SYSTEM_RUBY_NEW_ENOUGH
   else
@@ -539,7 +554,7 @@ Your Git executable: $(unset git && type -p ${HOMEBREW_GIT})"
   unset HOMEBREW_MACOS_SYSTEM_RUBY_NEW_ENOUGH
 
   HOMEBREW_CORE_REPOSITORY_ORIGIN="$("${HOMEBREW_GIT}" -C "${HOMEBREW_CORE_REPOSITORY}" remote get-url origin 2>/dev/null)"
-  if [[ "${HOMEBREW_CORE_REPOSITORY_ORIGIN}" =~ /linuxbrew-core(\.git)?$ ]]
+  if [[ "${HOMEBREW_CORE_REPOSITORY_ORIGIN}" =~ (/linuxbrew|Linuxbrew/homebrew)-core(\.git)?$ ]]
   then
     # triggers migration code in update.sh
     # shellcheck disable=SC2034
