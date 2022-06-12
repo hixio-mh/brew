@@ -63,13 +63,17 @@ chmod -R go-w "$(brew --prefix)/share/zsh"
 
 Create a Homebrew installation wherever you extract the tarball. Whichever `brew` command is called is where the packages will be installed. You can use this as you see fit, e.g. to have a system set of libs in the default prefix and tweaked formulae for development in `~/homebrew`.
 
+### Unattended installation
+
+If you want a non-interactive run of the Homebrew installer that doesn't prompt for passwords (e.g. in automation scripts), prepend [`NONINTERACTIVE=1`](https://github.com/Homebrew/install/#install-homebrew-on-macos-or-linux) to the installation command.
+
 ## Uninstallation
 
 Uninstallation is documented in the [FAQ](FAQ.md).
 
 <a name="1"><sup>1</sup></a> For 32-bit or PPC support see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
 
-<a name="2"><sup>2</sup></a> 10.15 or higher is recommended, while 10.10–10.14 are supported on a best-effort basis. For 10.4–10.6 see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
+<a name="2"><sup>2</sup></a> 10.15 or higher is recommended, while 10.11–10.14 are supported on a best-effort basis. For 10.4–10.6 see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
 
 <a name="3"><sup>3</sup></a> Most formulae require a compiler. A handful require a full Xcode installation. You can install Xcode, the CLT, or both; Homebrew supports all three configurations. Downloading Xcode may require an Apple Developer account on older versions of Mac OS X. Sign up for free at [Apple's website](https://developer.apple.com/register/index.action).
 

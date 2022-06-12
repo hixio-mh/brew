@@ -38,11 +38,8 @@ class FormulaInstaller
 
   attr_predicate :installed_as_dependency?, :installed_on_request?
   attr_predicate :show_summary_heading?, :show_header?
-  attr_predicate :force_bottle?, :ignore_deps?, :only_deps?, :interactive?, :git?, :force?, :keep_tmp?
+  attr_predicate :force_bottle?, :ignore_deps?, :only_deps?, :interactive?, :git?, :force?, :overwrite?, :keep_tmp?
   attr_predicate :verbose?, :debug?, :quiet?
-
-  # TODO: Remove when removed from `test-bot`.
-  attr_writer :build_bottle
 
   def initialize(
     formula,
@@ -64,6 +61,7 @@ class FormulaInstaller
     cc: nil,
     options: Options.new,
     force: false,
+    overwrite: false,
     debug: false,
     quiet: false,
     verbose: false
@@ -71,6 +69,7 @@ class FormulaInstaller
     @formula = formula
     @env = env
     @force = force
+    @overwrite = overwrite
     @keep_tmp = keep_tmp
     @link_keg = !formula.keg_only? || link_keg
     @show_header = show_header
@@ -135,9 +134,7 @@ class FormulaInstaller
 
   sig { returns(T::Boolean) }
   def build_bottle?
-    return false unless @build_bottle
-
-    !formula.bottle_disabled?
+    @build_bottle.present?
   end
 
   sig { params(output_warning: T::Boolean).returns(T::Boolean) }
@@ -147,7 +144,6 @@ class FormulaInstaller
     return false if build_from_source? || build_bottle? || interactive?
     return false if @cc
     return false unless options.empty?
-    return false if formula.bottle_disabled?
 
     unless formula.pour_bottle?
       if output_warning && formula.pour_bottle_check_unsatisfied_reason
@@ -250,8 +246,7 @@ class FormulaInstaller
     end
 
     if Homebrew.default_prefix? &&
-       !build_from_source? && !build_bottle? && !formula.head? &&
-       formula.tap&.core_tap? && !formula.bottle_unneeded? &&
+       !build_from_source? && !build_bottle? && !formula.head? && formula.tap&.core_tap? &&
        # Integration tests override homebrew-core locations
        ENV["HOMEBREW_TEST_TMPDIR"].nil? &&
        !pour_bottle?
@@ -374,9 +369,7 @@ class FormulaInstaller
     lock
 
     start_time = Time.now
-    if !formula.bottle_unneeded? && !pour_bottle? && DevelopmentTools.installed?
-      Homebrew::Install.perform_build_from_source_checks
-    end
+    Homebrew::Install.perform_build_from_source_checks if !pour_bottle? && DevelopmentTools.installed?
 
     # Warn if a more recent version of this formula is available in the tap.
     begin
@@ -389,7 +382,7 @@ class FormulaInstaller
 
     check_conflicts
 
-    raise UnbottledError, [formula] if !pour_bottle? && !formula.bottle_unneeded? && !DevelopmentTools.installed?
+    raise UnbottledError, [formula] if !pour_bottle? && !DevelopmentTools.installed?
 
     unless ignore_deps?
       deps = compute_dependencies(use_cache: false)
@@ -461,7 +454,7 @@ class FormulaInstaller
       end
       s = formula_contents.gsub(/  bottle do.+?end\n\n?/m, "")
       brew_prefix = formula.prefix/".brew"
-      brew_prefix.mkdir
+      brew_prefix.mkpath
       Pathname(brew_prefix/"#{formula.name}.rb").atomic_write(s)
 
       keg = Keg.new(formula.prefix)
@@ -521,7 +514,7 @@ class FormulaInstaller
     deps.map(&:first).map(&:to_formula).reject do |dep_f|
       next false unless dep_f.pour_bottle?
 
-      dep_f.bottle_unneeded? || dep_f.bottled?
+      dep_f.bottled?
     end
   end
 
@@ -577,7 +570,8 @@ class FormulaInstaller
         if req.prune_from_option?(build) ||
            req.satisfied?(env: @env, cc: @cc, build_bottle: @build_bottle, bottle_arch: @bottle_arch) ||
            ((req.build? || req.test?) && !keep_build_test) ||
-           formula_deps_map[dependent.name]&.build?
+           formula_deps_map[dependent.name]&.build? ||
+           (only_deps? && f == dependent)
           Requirement.prune
         else
           unsatisfied_reqs[dependent] << req
@@ -951,7 +945,7 @@ class FormulaInstaller
 
     unless link_keg
       begin
-        keg.optlink(verbose: verbose?)
+        keg.optlink(verbose: verbose?, overwrite: overwrite?)
       rescue Keg::LinkError => e
         ofail "Failed to create #{formula.opt_prefix}"
         puts "Things that depend on #{formula.full_name} will probably not build."
@@ -982,7 +976,7 @@ class FormulaInstaller
     backup_dir = HOMEBREW_CACHE/"Backup"
 
     begin
-      keg.link(verbose: verbose?)
+      keg.link(verbose: verbose?, overwrite: overwrite?)
     rescue Keg::ConflictError => e
       conflict_file = e.dst
       if formula.link_overwrite?(conflict_file) && !link_overwrite_backup.key?(conflict_file)
@@ -1227,11 +1221,17 @@ class FormulaInstaller
 
     keg = Keg.new(formula.prefix)
     skip_linkage = formula.bottle_specification.skip_relocation?
-    # TODO: Remove `with_env` when bottles are built with RPATH relocation enabled
-    # https://github.com/Homebrew/brew/issues/11329
-    with_env(HOMEBREW_RELOCATE_RPATHS: "1") do
-      keg.replace_placeholders_with_locations tab.changed_files, skip_linkage: skip_linkage
-    end
+    keg.replace_placeholders_with_locations tab.changed_files, skip_linkage: skip_linkage
+
+    cellar = formula.bottle_specification.tag_to_cellar(Utils::Bottles.tag)
+    return if [:any, :any_skip_relocation].include?(cellar)
+
+    prefix = Pathname(cellar).parent.to_s
+    return if cellar == HOMEBREW_CELLAR.to_s && prefix == HOMEBREW_PREFIX.to_s
+
+    return unless ENV["HOMEBREW_RELOCATE_BUILD_PREFIX"]
+
+    keg.relocate_build_prefix(keg, prefix, HOMEBREW_PREFIX)
   end
 
   sig { params(output: T.nilable(String)).void }

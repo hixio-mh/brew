@@ -81,7 +81,7 @@ module Homebrew
 
     Formulary.enable_factory_cache!
 
-    recursive = !args.send("1?")
+    recursive = !args.send(:"1?")
     installed = args.installed? || dependents(args.named.to_formulae_and_casks).all?(&:any_version_installed?)
 
     @use_runtime_dependencies = installed && recursive &&
@@ -121,7 +121,7 @@ module Homebrew
       puts_deps_tree dependents, recursive: recursive, args: args
       return
     elsif args.all?
-      puts_deps sorted_dependents(Formula.to_a + Cask::Cask.to_a), recursive: recursive, args: args
+      puts_deps sorted_dependents(Formula.all + Cask::Cask.all), recursive: recursive, args: args
       return
     elsif !args.no_named? && args.for_each?
       puts_deps sorted_dependents(args.named.to_formulae_and_casks), recursive: recursive, args: args
@@ -234,7 +234,7 @@ module Homebrew
           attributes << "color = green"
         end
         comment = " # #{dep.tags.map(&:inspect).join(", ")}" if dep.tags.any?
-        "  \"#{d}\" -> \"#{dep}\"#{" [#{attributes.join(", ")}]" if attributes.any?}#{comment}"
+        "  \"#{d.name}\" -> \"#{dep}\"#{" [#{attributes.join(", ")}]" if attributes.any?}#{comment}"
       end
     end.flatten.join("\n")
     "digraph {\n#{dot_code}\n}"

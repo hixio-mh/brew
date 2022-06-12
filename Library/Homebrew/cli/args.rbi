@@ -4,6 +4,9 @@ module Homebrew
   module CLI
     class Args < OpenStruct
       sig { returns(T::Boolean) }
+      def remove_bottle_block?; end
+
+      sig { returns(T::Boolean) }
       def strict?; end
 
       sig { returns(T::Boolean) }
@@ -308,6 +311,9 @@ module Homebrew
 
       sig { returns(T::Boolean) }
       def print_path?; end
+
+      sig { returns(T.nilable(T::Boolean)) }
+      def force_auto_update?; end
     end
   end
 end

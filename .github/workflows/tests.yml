@@ -228,6 +228,9 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.test-flags }}-parallel_runtime_rspec-${{ github.sha }}
           restore-keys: ${{ runner.os }}-${{ matrix.test-flags }}-parallel_runtime_rspec-
 
+      - name: Install brew tests dependencies
+        run: brew install curl
+
       - name: Run brew tests
         run: |
           # brew tests doesn't like world writable directories
@@ -237,7 +240,7 @@ jobs:
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b
+      - uses: codecov/codecov-action@81cd2dc8148241f03f5839d295e000b8f761e378
         with:
           files: Library/Homebrew/test/coverage/coverage.xml
 
@@ -303,13 +306,7 @@ jobs:
         run: brew readall --aliases
 
       - name: Install brew tests dependencies
-        run: |
-          brew install subversion
-          brew sh -c "svn --homebrew=print-path"
-          which svn
-          which svnadmin
-          brew install curl
-          which curl
+        run: brew install subversion curl
 
       - name: Create parallel test log directory
         run: mkdir tests
@@ -344,6 +341,6 @@ jobs:
 
       - run: brew test-bot --only-formulae --test-default-formula
 
-      - uses: codecov/codecov-action@f32b3a3741e1053eb607407145bc9619351dc93b
+      - uses: codecov/codecov-action@81cd2dc8148241f03f5839d295e000b8f761e378
         with:
           files: Library/Homebrew/test/coverage/coverage.xml

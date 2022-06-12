@@ -900,7 +900,7 @@ module Homebrew
 
         <<~EOS
           Some installed kegs have no formulae!
-          This means they were either deleted or installed with `brew diy`.
+          This means they were either deleted or installed manually.
           You should find replacements for the following formulae:
             #{deleted_formulae.join("\n  ")}
         EOS
@@ -1048,8 +1048,6 @@ module Homebrew
           "There's no working version of `xattr` on this system."
         when :no_swift
           "Swift is not available on this system."
-        when :no_quarantine
-          "This feature requires the macOS 10.10 SDK or higher."
         else
           "Unknown support status"
         end

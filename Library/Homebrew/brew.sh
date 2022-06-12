@@ -226,13 +226,13 @@ EOS
   fi
 }
 
-# Let user know we're still updating Homebrew if brew update --preinstall
+# Let user know we're still updating Homebrew if brew update --auto-update
 # exceeds 3 seconds.
-update-preinstall-timer() {
+auto-update-timer() {
   sleep 3
   # Outputting a command but don't want to run it, hence single quotes.
   # shellcheck disable=SC2016
-  echo 'Running `brew update --preinstall`...' >&2
+  echo 'Running `brew update --auto-update`...' >&2
   if [[ -z "${HOMEBREW_NO_ENV_HINTS}" && -z "${HOMEBREW_AUTO_UPDATE_SECS}" ]]
   then
     # shellcheck disable=SC2016
@@ -244,11 +244,11 @@ update-preinstall-timer() {
 
 # These variables are set from various Homebrew scripts.
 # shellcheck disable=SC2154
-update-preinstall() {
+auto-update() {
   [[ -z "${HOMEBREW_HELP}" ]] || return
   [[ -z "${HOMEBREW_NO_AUTO_UPDATE}" ]] || return
   [[ -z "${HOMEBREW_AUTO_UPDATING}" ]] || return
-  [[ -z "${HOMEBREW_UPDATE_PREINSTALL}" ]] || return
+  [[ -z "${HOMEBREW_UPDATE_AUTO}" ]] || return
   [[ -z "${HOMEBREW_AUTO_UPDATE_CHECKED}" ]] || return
 
   # If we've checked for updates, we don't need to check again.
@@ -280,11 +280,11 @@ update-preinstall() {
 
     if [[ -z "${HOMEBREW_VERBOSE}" ]]
     then
-      update-preinstall-timer &
+      auto-update-timer &
       timer_pid=$!
     fi
 
-    brew update --preinstall
+    brew update --auto-update
 
     if [[ -n "${timer_pid}" ]]
     then
@@ -441,8 +441,8 @@ then
     HOMEBREW_OS_VERSION="macOS ${HOMEBREW_MACOS_VERSION}"
   fi
 
-  # Refuse to run on pre-Yosemite
-  if [[ "${HOMEBREW_MACOS_VERSION_NUMERIC}" -lt "101000" ]]
+  # Refuse to run on pre-El Capitan
+  if [[ "${HOMEBREW_MACOS_VERSION_NUMERIC}" -lt "101100" ]]
   then
     printf "ERROR: Your version of macOS (%s) is too old to run Homebrew!\\n" "${HOMEBREW_MACOS_VERSION}" >&2
     if [[ "${HOMEBREW_MACOS_VERSION_NUMERIC}" -lt "100700" ]]
@@ -466,11 +466,17 @@ then
     HOMEBREW_FORCE_BREWED_CA_CERTIFICATES="1"
   fi
 
-  # The system Git on macOS versions before Sierra is too old for some Homebrew functionality we rely on.
-  HOMEBREW_MINIMUM_GIT_VERSION="2.14.3"
-  if [[ "${HOMEBREW_MACOS_VERSION_NUMERIC}" -lt "101200" ]]
+  if [[ -n "${HOMEBREW_FAKE_EL_CAPITAN}" ]]
   then
-    HOMEBREW_FORCE_BREWED_GIT="1"
+    # We only need this to work enough to update brew and build the set portable formulae, so relax the requirement.
+    HOMEBREW_MINIMUM_GIT_VERSION="2.7.4"
+  else
+    # The system Git on macOS versions before Sierra is too old for some Homebrew functionality we rely on.
+    HOMEBREW_MINIMUM_GIT_VERSION="2.14.3"
+    if [[ "${HOMEBREW_MACOS_VERSION_NUMERIC}" -lt "101200" ]]
+    then
+      HOMEBREW_FORCE_BREWED_GIT="1"
+    fi
   fi
 
   # Set a variable when the macOS system Ruby is new enough to avoid spawning
@@ -485,7 +491,7 @@ then
   fi
 else
   HOMEBREW_PRODUCT="${HOMEBREW_SYSTEM}brew"
-  [[ -n "${HOMEBREW_LINUX}" ]] && HOMEBREW_OS_VERSION="$(lsb_release -sd 2>/dev/null)"
+  [[ -n "${HOMEBREW_LINUX}" ]] && HOMEBREW_OS_VERSION="$(lsb_release -s -d 2>/dev/null)"
   : "${HOMEBREW_OS_VERSION:=$(uname -r)}"
   HOMEBREW_OS_USER_AGENT_VERSION="${HOMEBREW_OS_VERSION}"
 
@@ -493,8 +499,10 @@ else
   # shellcheck disable=SC2154
   if [[ -n "${HOMEBREW_ON_DEBIAN7}" ]]
   then
-    # Special version for our debian 7 docker container used to build patchelf and binutils
+    # Special version for our debian 7 docker container used to build binutils
     HOMEBREW_MINIMUM_CURL_VERSION="7.25.0"
+    HOMEBREW_SYSTEM_CA_CERTIFICATES_TOO_OLD="1"
+    HOMEBREW_FORCE_BREWED_CA_CERTIFICATES="1"
   else
     # Ensure the system Curl is a version that supports modern HTTPS certificates.
     HOMEBREW_MINIMUM_CURL_VERSION="7.41.0"
@@ -818,6 +826,16 @@ then
   export GIT_SSH_COMMAND="ssh -F${HOMEBREW_SSH_CONFIG_PATH}"
 fi
 
+if [[ -n "${HOMEBREW_DOCKER_REGISTRY_TOKEN}" ]]
+then
+  export HOMEBREW_GITHUB_PACKAGES_AUTH="Bearer ${HOMEBREW_DOCKER_REGISTRY_TOKEN}"
+elif [[ -n "${HOMEBREW_DOCKER_REGISTRY_BASIC_AUTH_TOKEN}" ]]
+then
+  export HOMEBREW_GITHUB_PACKAGES_AUTH="Basic ${HOMEBREW_DOCKER_REGISTRY_BASIC_AUTH_TOKEN}"
+else
+  export HOMEBREW_GITHUB_PACKAGES_AUTH="Bearer QQ=="
+fi
+
 if [[ -n "${HOMEBREW_BASH_COMMAND}" ]]
 then
   # source rather than executing directly to ensure the entire file is read into
@@ -830,7 +848,7 @@ then
   source "${HOMEBREW_BASH_COMMAND}"
 
   {
-    update-preinstall "$@"
+    auto-update "$@"
     "homebrew-${HOMEBREW_COMMAND}" "$@"
     exit $?
   }
@@ -844,7 +862,7 @@ else
   # HOMEBREW_RUBY_PATH set by utils/ruby.sh
   # shellcheck disable=SC2154
   {
-    update-preinstall "$@"
+    auto-update "$@"
     exec "${HOMEBREW_RUBY_PATH}" "${HOMEBREW_RUBY_WARNINGS}" "${RUBY_DISABLE_OPTIONS}" \
       "${HOMEBREW_LIBRARY}/Homebrew/brew.rb" "$@"
   }

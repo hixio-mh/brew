@@ -46,7 +46,7 @@ module Homebrew
       expect(ft).to have_trailing_newline
 
       expect(ft =~ /\burl\b/).to be_truthy
-      expect(ft.line_number(/desc/)).to be nil
+      expect(ft.line_number(/desc/)).to be_nil
       expect(ft.line_number(/\burl\b/)).to eq(2)
       expect(ft).to include("Valid")
     end
@@ -888,6 +888,23 @@ module Homebrew
         tap_path.mkpath
         tap_path.cd do
           system "git", "clone", origin_tap_path, "."
+        end
+      end
+
+      describe "new formulae should not have a revision" do
+        it "doesn't allow new formulae to have a revision" do
+          fa = formula_auditor "foo", <<~RUBY, new_formula: true
+            class Foo < Formula
+              url "https://brew.sh/foo-1.0.tgz"
+              revision 1
+            end
+          RUBY
+
+          fa.audit_revision_and_version_scheme
+
+          expect(fa.new_formula_problems).to include(
+            a_hash_including(message: a_string_matching(/should not define a revision/)),
+          )
         end
       end
 

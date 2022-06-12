@@ -6,7 +6,7 @@ require "compilers"
 class Keg
   def relocate_dynamic_linkage(relocation)
     # Patching the dynamic linker of glibc breaks it.
-    return if name == "glibc"
+    return if name.match? Version.formula_optionally_versioned_regex(:glibc)
 
     # Patching patchelf fails with "Text file busy" or SIGBUS.
     return if name == "patchelf"
@@ -84,9 +84,16 @@ class Keg
   def self.bottle_dependencies
     @bottle_dependencies ||= begin
       formulae = relocation_formulae
-      gcc = Formulary.factory(CompilerSelector.preferred_gcc)
+      if Homebrew::EnvConfig.install_from_api?
+        gcc_hash = Homebrew::API::Formula.fetch(CompilerSelector.preferred_gcc)
+        preferred_gcc_version = Version.new gcc_hash["versions"]["stable"]
+      else
+        gcc = Formulary.factory(CompilerSelector.preferred_gcc)
+        preferred_gcc_version = gcc.version
+      end
       if !Homebrew::EnvConfig.simulate_macos_on_linux? &&
-         DevelopmentTools.non_apple_gcc_version("gcc") < gcc.version.to_i
+         DevelopmentTools.non_apple_gcc_version("gcc") < preferred_gcc_version.major
+        gcc = Formulary.factory(CompilerSelector.preferred_gcc) if Homebrew::EnvConfig.install_from_api?
         formulae += gcc.recursive_dependencies.map(&:name)
         formulae << gcc.name
       end

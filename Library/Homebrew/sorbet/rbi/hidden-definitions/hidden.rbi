@@ -12,18 +12,6 @@ class AbstractDownloadStrategy
   extend ::T::Private::Methods::SingletonMethodHooks
 end
 
-class ActiveRecordColumnTypeHelper
-  extend ::T::Sig
-  extend ::T::Private::Methods::MethodHooks
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-module ActiveSupport
-  def parse_json_times(); end
-
-  def parse_json_times=(val); end
-end
-
 class ActiveSupport::Deprecation
   def self.deprecation_warning(*args, &block); end
 
@@ -36,26 +24,8 @@ module ActiveSupport::ForkTracker::CoreExtPrivate
   include ::ActiveSupport::ForkTracker::CoreExt
 end
 
-module ActiveSupport
-  def self.escape_html_entities_in_json(*args, &block); end
-
-  def self.escape_html_entities_in_json=(arg); end
-
-  def self.json_encoder(*args, &block); end
-
-  def self.json_encoder=(arg); end
-
-  def self.parse_json_times(); end
-
-  def self.parse_json_times=(val); end
-
-  def self.time_precision(*args, &block); end
-
-  def self.time_precision=(arg); end
-
-  def self.use_standard_json_time_format(*args, &block); end
-
-  def self.use_standard_json_time_format=(arg); end
+module ActiveSupport::VERSION
+  PRE = ::T.let(nil, ::T.untyped)
 end
 
 class Addrinfo
@@ -996,6 +966,8 @@ class Cask::DSL::Caveats
 
   def reboot(*args); end
 
+  def requires_rosetta(*args); end
+
   def unsigned_accessibility(*args); end
 
   def zsh_path_helper(*args); end
@@ -1337,12 +1309,6 @@ class Dir
 end
 
 module DiskUsageExtension
-  extend ::T::Private::Methods::MethodHooks
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-class DynamicMixinCompiler
-  extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
 end
@@ -2182,60 +2148,6 @@ end
 
 Gem::Security::KEY_ALGORITHM = OpenSSL::PKey::RSA
 
-class Gem::Security::Policy
-  include ::Gem::UserInteraction
-  include ::Gem::DefaultUserInteraction
-  include ::Gem::Text
-  def check_cert(signer, issuer, time); end
-
-  def check_chain(chain, time); end
-
-  def check_data(public_key, digest, signature, data); end
-
-  def check_key(signer, key); end
-
-  def check_root(chain, time); end
-
-  def check_trust(chain, digester, trust_dir); end
-
-  def initialize(name, policy=T.unsafe(nil), opt=T.unsafe(nil)); end
-
-  def name(); end
-
-  def only_signed(); end
-
-  def only_signed=(only_signed); end
-
-  def only_trusted(); end
-
-  def only_trusted=(only_trusted); end
-
-  def subject(certificate); end
-
-  def verify(chain, key=T.unsafe(nil), digests=T.unsafe(nil), signatures=T.unsafe(nil), full_name=T.unsafe(nil)); end
-
-  def verify_chain(); end
-
-  def verify_chain=(verify_chain); end
-
-  def verify_data(); end
-
-  def verify_data=(verify_data); end
-
-  def verify_root(); end
-
-  def verify_root=(verify_root); end
-
-  def verify_signatures(spec, digests, signatures); end
-
-  def verify_signer(); end
-
-  def verify_signer=(verify_signer); end
-end
-
-class Gem::Security::Policy
-end
-
 class Gem::Security::Signer
   include ::Gem::UserInteraction
   include ::Gem::DefaultUserInteraction
@@ -2445,48 +2357,6 @@ module Gem
   def self.remove_unresolved_default_spec(spec); end
 end
 
-module GetText
-end
-
-class GetText::PoParser
-  def _(x); end
-
-  def _reduce_10(val, _values, result); end
-
-  def _reduce_12(val, _values, result); end
-
-  def _reduce_13(val, _values, result); end
-
-  def _reduce_14(val, _values, result); end
-
-  def _reduce_15(val, _values, result); end
-
-  def _reduce_5(val, _values, result); end
-
-  def _reduce_8(val, _values, result); end
-
-  def _reduce_9(val, _values, result); end
-
-  def _reduce_none(val, _values, result); end
-
-  def on_comment(comment); end
-
-  def on_message(msgid, msgstr); end
-
-  def parse(str, data, ignore_fuzzy=T.unsafe(nil)); end
-
-  def unescape(orig); end
-  Racc_arg = ::T.let(nil, ::T.untyped)
-  Racc_debug_parser = ::T.let(nil, ::T.untyped)
-  Racc_token_to_s_table = ::T.let(nil, ::T.untyped)
-end
-
-class GetText::PoParser
-end
-
-module GetText
-end
-
 module GitHub::API
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
@@ -2519,10 +2389,6 @@ end
 module Hardware
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-class Hash
-  def self.try_convert(arg); end
 end
 
 module Homebrew
@@ -2586,6 +2452,8 @@ module Homebrew::EnvConfig
 
   def self.bat_config_path(); end
 
+  def self.bat_theme(); end
+
   def self.bootsnap?(); end
 
   def self.bottle_domain(); end
@@ -2619,6 +2487,8 @@ module Homebrew::EnvConfig
   def self.display(); end
 
   def self.display_install_times?(); end
+
+  def self.docker_registry_basic_auth_token(); end
 
   def self.docker_registry_token(); end
 
@@ -2704,7 +2574,7 @@ module Homebrew::EnvConfig
 
   def self.temp(); end
 
-  def self.update_report_only_installed?(); end
+  def self.update_report_all_formulae?(); end
 
   def self.update_to_tag?(); end
 
@@ -2803,26 +2673,6 @@ module HostEnvironmentSimulatorHelper
 end
 
 module HostEnvironmentSimulatorHelper
-end
-
-module I18n
-  def self.cache_key_digest(); end
-
-  def self.cache_key_digest=(key_digest); end
-
-  def self.cache_namespace(); end
-
-  def self.cache_namespace=(namespace); end
-
-  def self.cache_store(); end
-
-  def self.cache_store=(store); end
-
-  def self.fallbacks(); end
-
-  def self.fallbacks=(fallbacks); end
-
-  def self.perform_caching?(); end
 end
 
 class IO
@@ -3040,24 +2890,6 @@ class IRB::SLex
   def Fail(err=T.unsafe(nil), *rest); end
 
   def Raise(err=T.unsafe(nil), *rest); end
-
-  def create(token, preproc=T.unsafe(nil), postproc=T.unsafe(nil)); end
-
-  def def_rule(token, preproc=T.unsafe(nil), postproc=T.unsafe(nil), &block); end
-
-  def def_rules(*tokens, &block); end
-
-  def match(token); end
-
-  def postproc(token); end
-
-  def preproc(token, proc); end
-
-  def search(token); end
-  DOUT = ::T.let(nil, ::T.untyped)
-  D_DEBUG = ::T.let(nil, ::T.untyped)
-  D_DETAIL = ::T.let(nil, ::T.untyped)
-  D_WARN = ::T.let(nil, ::T.untyped)
 end
 
 class IRB::SLex::ErrNodeAlreadyExists
@@ -3070,29 +2902,6 @@ class IRB::SLex::ErrNodeNothing
 end
 
 class IRB::SLex::ErrNodeNothing
-end
-
-class IRB::SLex::Node
-  def create_subnode(chrs, preproc=T.unsafe(nil), postproc=T.unsafe(nil)); end
-
-  def initialize(preproc=T.unsafe(nil), postproc=T.unsafe(nil)); end
-
-  def match(chrs, op=T.unsafe(nil)); end
-
-  def match_io(io, op=T.unsafe(nil)); end
-
-  def postproc(); end
-
-  def postproc=(postproc); end
-
-  def preproc(); end
-
-  def preproc=(preproc); end
-
-  def search(chrs, opt=T.unsafe(nil)); end
-end
-
-class IRB::SLex::Node
 end
 
 class IRB::SLex
@@ -3186,25 +2995,15 @@ module Kernel
 
   def choose(*args, &block); end
 
-  def itself(); end
-
-  def object_id(); end
-
   def pretty_inspect(); end
 
   def say(*args, &block); end
-
-  def then(); end
-
-  def yield_self(); end
 end
 
 module Kernel
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
   def self.at_exit(); end
-
-  def self.autoload(arg, arg1); end
 
   def self.fork(); end
 
@@ -3260,6 +3059,8 @@ module MachOShim
 end
 
 class MessagePack::Packer
+  def reset(); end
+
   def write_bin(arg); end
 
   def write_bin_header(arg); end
@@ -3485,8 +3286,6 @@ class MockExpectationError
 end
 
 class Module
-  def autoload_without_tapioca(arg, arg1); end
-
   def context(*a, &b); end
 
   def describe(*a, &b); end
@@ -3748,6 +3547,7 @@ class Object
   HOMEBREW_DEFAULT_PREFIX = ::T.let(nil, ::T.untyped)
   HOMEBREW_DEFAULT_REPOSITORY = ::T.let(nil, ::T.untyped)
   HOMEBREW_DEFAULT_TEMP = ::T.let(nil, ::T.untyped)
+  HOMEBREW_GITHUB_PACKAGES_AUTH = ::T.let(nil, ::T.untyped)
   HOMEBREW_LIBRARY = ::T.let(nil, ::T.untyped)
   HOMEBREW_LIBRARY_PATH = ::T.let(nil, ::T.untyped)
   HOMEBREW_LINKED_KEGS = ::T.let(nil, ::T.untyped)
@@ -4034,7 +3834,7 @@ class Parlour::Conversion::Converter
   extend ::T::Private::Methods::SingletonMethodHooks
 end
 
-module Parlour::Debugging::Tree
+class Parlour::Debugging::Tree
   extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
@@ -4048,6 +3848,14 @@ end
 
 class Parlour::Generator
   extend ::T::Sig
+  extend ::T::Private::Methods::MethodHooks
+  extend ::T::Private::Methods::SingletonMethodHooks
+end
+
+module Parlour::Mixin::Searchable
+  extend ::T::Sig
+  extend ::T::Private::Abstract::Hooks
+  extend ::T::InterfaceWrapper::Helpers
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
 end
@@ -4152,9 +3960,6 @@ end
 class Pathname
   include ::ELFShim
   include ::MachOShim
-  def fnmatch?(*arg); end
-
-  def make_symlink(arg); end
 end
 
 class Pathname
@@ -4185,11 +3990,7 @@ class Proc
 end
 
 module Process
-  def self.fork(&block); end
-
-  def self.fork_with_simplecov(&block); end
-
-  def self.fork_without_simplecov(); end
+  def self.fork(); end
 end
 
 class Pry::BasicObject
@@ -4250,6 +4051,12 @@ class RBI::File
   extend ::T::Private::Methods::SingletonMethodHooks
 end
 
+class RBI::Formatter
+  extend ::T::Sig
+  extend ::T::Private::Methods::MethodHooks
+  extend ::T::Private::Methods::SingletonMethodHooks
+end
+
 class RBI::Index
   include ::T::Enumerable
 end
@@ -4303,6 +4110,12 @@ class RBI::Rewriters::Merge
 end
 
 class RBI::Rewriters::RemoveKnownDefinitions::Operation
+  extend ::T::Sig
+  extend ::T::Private::Methods::MethodHooks
+  extend ::T::Private::Methods::SingletonMethodHooks
+end
+
+class RBI::UnexpectedParserError
   extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
@@ -4422,14 +4235,6 @@ class Racc::CparseParams
 end
 
 class Racc::CparseParams
-end
-
-class Rack::Request
-  def query(); end
-
-  def version_supplied(); end
-
-  def version_supplied=(version_supplied); end
 end
 
 class Random
@@ -5128,12 +4933,9 @@ class RuboCop::AST::NodePattern::Parser
 end
 
 module RuboCop::AST::NodePattern::Sets
-  SET_BLANK_EMPTY = ::T.let(nil, ::T.untyped)
   SET_BUILD_RECOMMENDED_TEST_OPTIONAL = ::T.let(nil, ::T.untyped)
-  SET_CHANGE_COLUMN_EXECUTE_REMOVE_BELONGS_TO_REMOVE_REFERENCE = ::T.let(nil, ::T.untyped)
   SET_DEPENDS_ON_USES_FROM_MACOS = ::T.let(nil, ::T.untyped)
   SET_INCLUDE_WITH_WITHOUT = ::T.let(nil, ::T.untyped)
-  SET_ROOT_PUBLIC_PATH = ::T.let(nil, ::T.untyped)
   SET_SYSTEM_SHELL_OUTPUT_PIPE_OUTPUT = ::T.let(nil, ::T.untyped)
   SET_WITH_WITHOUT = ::T.let(nil, ::T.untyped)
 end
@@ -6595,14 +6397,6 @@ module Socket::Constants
   TCP_NOPUSH = ::T.let(nil, ::T.untyped)
 end
 
-class SortedSet
-  def initialize(*args, &block); end
-end
-
-class SortedSet
-  def self.setup(); end
-end
-
 class Spoom::Cli::Bump
   extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
@@ -6684,6 +6478,12 @@ module Spoom::Git
   extend ::T::Private::Methods::SingletonMethodHooks
 end
 
+class Spoom::LSP::Client
+  extend ::T::Sig
+  extend ::T::Private::Methods::MethodHooks
+  extend ::T::Private::Methods::SingletonMethodHooks
+end
+
 class Spoom::LSP::Diagnostic
   extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
@@ -6696,6 +6496,12 @@ class Spoom::LSP::DocumentSymbol
   extend ::T::Private::Methods::SingletonMethodHooks
 end
 
+class Spoom::LSP::Error::Diagnostics
+  extend ::T::Sig
+  extend ::T::Private::Methods::MethodHooks
+  extend ::T::Private::Methods::SingletonMethodHooks
+end
+
 class Spoom::LSP::Hover
   extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
@@ -6703,6 +6509,12 @@ class Spoom::LSP::Hover
 end
 
 class Spoom::LSP::Location
+  extend ::T::Sig
+  extend ::T::Private::Methods::MethodHooks
+  extend ::T::Private::Methods::SingletonMethodHooks
+end
+
+class Spoom::LSP::Message
   extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
@@ -6724,6 +6536,12 @@ module Spoom::LSP::PrintableSymbol
 end
 
 class Spoom::LSP::Range
+  extend ::T::Sig
+  extend ::T::Private::Methods::MethodHooks
+  extend ::T::Private::Methods::SingletonMethodHooks
+end
+
+class Spoom::LSP::ResponseError
   extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
@@ -6840,6 +6658,10 @@ class Struct
   def filter(*arg); end
 end
 
+class Symbol
+  def to_msgpack_ext(); end
+end
+
 class SystemCommand::Result
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
@@ -6856,44 +6678,6 @@ class Tab
 end
 
 class Tap
-  extend ::T::Private::Methods::MethodHooks
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-class Tapioca::Compilers::Dsl::Base
-  extend ::T::Sig
-  extend ::T::Helpers
-  extend ::T::Private::Abstract::Hooks
-  extend ::T::InterfaceWrapper::Helpers
-  extend ::T::Private::Methods::MethodHooks
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-module Tapioca::Compilers::Dsl::ParamHelper
-  extend ::T::Sig
-  extend ::T::Private::Methods::MethodHooks
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-class Tapioca::Compilers::DslCompiler
-  extend ::T::Sig
-  extend ::T::Private::Methods::MethodHooks
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-module Tapioca::Reflection
-  extend ::T::Sig
-  extend ::T::Private::Methods::MethodHooks
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-module Tapioca::Trackers::Autoload
-  extend ::T::Sig
-  extend ::T::Private::Methods::SingletonMethodHooks
-end
-
-module Tapioca::Trackers::Mixin
-  extend ::T::Sig
   extend ::T::Private::Methods::MethodHooks
   extend ::T::Private::Methods::SingletonMethodHooks
 end
@@ -7314,14 +7098,6 @@ class Version
   extend ::T::Private::Methods::SingletonMethodHooks
 end
 
-class WEBrick::HTTPRequest
-  def version_supplied(); end
-
-  def version_supplied=(version_supplied); end
-
-  def xhr?(); end
-end
-
 class WeakRef
   def initialize(orig); end
 end
@@ -7531,10 +7307,6 @@ module Webrobots
 end
 
 module Webrobots
-end
-
-module YARD::CodeObjects
-  extend ::YARD::CodeObjects::NamespaceMapper
 end
 
 module YARDSorbet::Directives

@@ -95,6 +95,8 @@ class FormulaOrCaskUnavailableError < RuntimeError
 
   sig { returns(String) }
   def did_you_mean
+    require "formula"
+
     similar_formula_names = Formula.fuzzy_search(name)
     return "" if similar_formula_names.blank?
 
@@ -479,7 +481,7 @@ class BuildError < RuntimeError
     @cmd = cmd
     @args = args
     @env = env
-    pretty_args = Array(args).map { |arg| arg.to_s.gsub " ", "\\ " }.join(" ")
+    pretty_args = Array(args).map { |arg| arg.to_s.gsub(/[\\ ]/, "\\\\\\0") }.join(" ")
     super "Failed executing: #{cmd} #{pretty_args}".strip
   end
 

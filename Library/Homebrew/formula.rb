@@ -64,8 +64,7 @@ class Formula
   include Utils::Shebang
   include Utils::Shell
   include Context
-  include OnOS # TODO: 3.3.0: deprecate OnOS usage in instance methods.
-  extend Enumerable
+  include OnOS
   extend Forwardable
   extend Cachable
   extend Predicable
@@ -358,9 +357,6 @@ class Formula
   end
 
   delegate [ # rubocop:disable Layout/HashAlignment
-    :bottle_unneeded?,
-    :bottle_disabled?,
-    :bottle_disable_reason,
     :bottle_defined?,
     :bottle_tag?,
     :bottled?,
@@ -1304,6 +1300,7 @@ class Formula
           CMakeCache.txt
           CMakeOutput.log
           CMakeError.log
+          meson-log.txt
         ].each do |logfile|
           Dir["**/#{logfile}"].each do |logpath|
             destdir = logs/File.dirname(logpath)
@@ -1682,16 +1679,21 @@ class Formula
     @full_names ||= core_names + tap_names
   end
 
+  # an array of all {Formula}
+  # this should only be used when users specify `--all` to a command
   # @private
-  def self.each(&_block)
-    files.each do |file|
-      yield Formulary.factory(file)
+  def self.all
+    # TODO: 3.6.0: consider checking ARGV for --all
+
+    files.map do |file|
+      Formulary.factory(file)
     rescue FormulaUnavailableError, FormulaUnreadableError => e
       # Don't let one broken formula break commands. But do complain.
       onoe "Failed to import: #{file}"
       $stderr.puts e
-      next
-    end
+
+      nil
+    end.compact
   end
 
   # An array of all racks currently installed.
@@ -1754,7 +1756,7 @@ class Formula
     @aliases ||= (core_aliases + tap_aliases.map { |name| name.split("/").last }).uniq.sort
   end
 
-  # an array of all aliases, , which the tap formulae have the fully-qualified name
+  # an array of all aliases as fully-qualified names
   # @private
   def self.alias_full_names
     @alias_full_names ||= core_aliases + tap_aliases
@@ -1943,7 +1945,6 @@ class Formula
       "bottle"                   => {},
       "keg_only"                 => keg_only?,
       "keg_only_reason"          => keg_only_reason&.to_hash,
-      "bottle_disabled"          => bottle_disabled?,
       "options"                  => [],
       "build_dependencies"       => dependencies.select(&:build?)
                                                 .map(&:name)

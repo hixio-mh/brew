@@ -306,12 +306,6 @@ module Homebrew
       tap = CoreTap.instance
     end
 
-    if f.bottle_disabled?
-      ofail "Formula has disabled bottle: #{f.full_name}"
-      puts f.bottle_disable_reason
-      return
-    end
-
     return ofail "Formula has no stable version: #{f.full_name}" unless f.stable
 
     bottle_tag, rebuild = if local_bottle_json
@@ -332,7 +326,7 @@ module Homebrew
     else
       ohai "Determining #{f.full_name} bottle rebuild..."
       FormulaVersions.new(f).formula_at_revision("origin/HEAD") do |upstream_f|
-        if f.pkg_version == upstream_f.pkg_version && !upstream_f.bottle_unneeded?
+        if f.pkg_version == upstream_f.pkg_version
           upstream_f.bottle_specification.rebuild + 1
         else
           0
@@ -446,6 +440,7 @@ module Homebrew
             gz.write(tarfile.read(GZIP_BUFFER_SIZE)) until tarfile.eof?
           end
           gz.close
+          rm_f relocatable_tar_path
           sudo_purge
         end
 
@@ -565,7 +560,6 @@ module Homebrew
         },
         "bottle"  => {
           "root_url" => bottle.root_url,
-          "prefix"   => prefix.to_s, # TODO: 3.3.0: deprecate this
           "cellar"   => bottle_cellar.to_s,
           "rebuild"  => bottle.rebuild,
           "date"     => Pathname(filename.to_s).mtime.strftime("%F"),
