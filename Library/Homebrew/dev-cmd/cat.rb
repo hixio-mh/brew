@@ -32,7 +32,14 @@ module Homebrew
     cd HOMEBREW_REPOSITORY
     pager = if Homebrew::EnvConfig.bat?
       ENV["BAT_CONFIG_PATH"] = Homebrew::EnvConfig.bat_config_path
-      "#{HOMEBREW_PREFIX}/bin/bat"
+      ENV["BAT_THEME"] = Homebrew::EnvConfig.bat_theme
+      ensure_formula_installed!(
+        "bat",
+        reason:           "displaying <formula>/<cask> source",
+        # The user might want to capture the output of `brew cat ...`
+        # Redirect stdout to stderr
+        output_to_stderr: true,
+      ).opt_bin/"bat"
     else
       "cat"
     end

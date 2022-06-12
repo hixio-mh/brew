@@ -63,6 +63,9 @@ class FormulaInstaller
   def force?; end
 
   sig { returns(T::Boolean) }
+  def overwrite?; end
+
+  sig { returns(T::Boolean) }
   def keep_tmp?; end
 
   sig { returns(T::Boolean) }
@@ -156,9 +159,15 @@ module Cask
     def verbose?; end
 
     sig { returns(T::Boolean) }
+    def zap?; end
+
+    sig { returns(T::Boolean) }
     def installed_as_dependency?; end
 
     sig { returns(T::Boolean) }
     def quarantine?; end
+
+    sig { returns(T::Boolean) }
+    def quiet?; end
   end
 end

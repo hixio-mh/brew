@@ -70,6 +70,7 @@ module Homebrew
 
       def fatal_setup_build_environment_checks
         %w[
+          check_xcode_minimum_version
           check_clt_minimum_version
           check_if_supported_sdk_available
         ].freeze
@@ -106,6 +107,7 @@ module Homebrew
 
       def check_for_unsupported_macos
         return if Homebrew::EnvConfig.developer?
+        return if ENV["HOMEBREW_INTEGRATION_TEST"]
 
         who = +"We"
         what = if OS::Mac.version.prerelease?
@@ -133,6 +135,10 @@ module Homebrew
         # repository. This only needs to support whatever CI providers
         # Homebrew/brew is currently using.
         return if ENV["GITHUB_ACTIONS"]
+
+        # With fake El Capitan for Portable Ruby, we are intentionally not using Xcode 8.
+        # This is because we are not using the CLT and Xcode 8 has the 10.12 SDK.
+        return if ENV["HOMEBREW_FAKE_EL_CAPITAN"]
 
         message = <<~EOS
           Your Xcode (#{MacOS::Xcode.version}) is outdated.
@@ -199,12 +205,19 @@ module Homebrew
       end
 
       def check_ruby_version
-        return if RUBY_VERSION == HOMEBREW_REQUIRED_RUBY_VERSION
+        # TODO: update portable-ruby to 2.6.9 when Ventura reaches RC
+        required_version = if MacOS.version >= :ventura &&
+                              ENV["HOMEBREW_RUBY_PATH"].to_s.exclude?("/vendor/portable-ruby/")
+          "2.6.9"
+        else
+          HOMEBREW_REQUIRED_RUBY_VERSION
+        end
+        return if RUBY_VERSION == required_version
         return if Homebrew::EnvConfig.developer? && OS::Mac.version.prerelease?
 
         <<~EOS
-          Ruby version #{RUBY_VERSION} is unsupported on #{MacOS.version}. Homebrew
-          is developed and tested on Ruby #{HOMEBREW_REQUIRED_RUBY_VERSION}, and may not work correctly
+          Ruby version #{RUBY_VERSION} is unsupported on macOS #{MacOS.version}. Homebrew
+          is developed and tested on Ruby #{required_version}, and may not work correctly
           on other Rubies. Patches are accepted as long as they don't cause breakage
           on supported Rubies.
         EOS
@@ -256,17 +269,6 @@ module Homebrew
           You have not agreed to the Xcode license.
           Agree to the license by opening Xcode.app or running:
             sudo xcodebuild -license
-        EOS
-      end
-
-      def check_xquartz_up_to_date
-        return unless MacOS::XQuartz.outdated?
-
-        <<~EOS
-          Your XQuartz (#{MacOS::XQuartz.version}) is outdated.
-          Please install XQuartz #{MacOS::XQuartz.latest_version} (or delete the current version).
-          XQuartz can be updated using Homebrew Cask by running:
-            brew reinstall xquartz
         EOS
       end
 

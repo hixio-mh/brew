@@ -1,10 +1,11 @@
-ARG version=20.04
-FROM ubuntu:$version
+ARG version=22.04
+# shellcheck disable=SC2154
+FROM ubuntu:"${version}"
 ARG DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends software-properties-common \
+  && apt-get install -y --no-install-recommends software-properties-common gnupg-agent \
   && add-apt-repository -y ppa:git-core/ppa \
   && apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -26,6 +27,8 @@ RUN apt-get update \
     sudo \
     uuid-runtime \
     tzdata \
+  && apt remove --purge -y software-properties-common \
+  && apt autoremove --purge -y \
   && rm -rf /var/lib/apt/lists/* \
   && localedef -i en_US -f UTF-8 en_US.UTF-8 \
   && useradd -m -s /bin/bash linuxbrew \
@@ -34,7 +37,7 @@ RUN apt-get update \
 
 USER linuxbrew
 COPY --chown=linuxbrew:linuxbrew . /home/linuxbrew/.linuxbrew/Homebrew
-ENV PATH=/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:$PATH
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:${PATH}"
 WORKDIR /home/linuxbrew
 
 RUN mkdir -p \

@@ -156,7 +156,7 @@ describe Tap do
     expect(homebrew_foo_tap.issues_url).to eq("https://github.com/Homebrew/homebrew-foo/issues")
 
     (Tap::TAP_DIRECTORY/"someone/homebrew-no-git").mkpath
-    expect(described_class.new("someone", "no-git").issues_url).to be nil
+    expect(described_class.new("someone", "no-git").issues_url).to be_nil
   ensure
     path.parent.rmtree
   end
@@ -198,13 +198,13 @@ describe Tap do
     end
 
     it "returns nil if the Tap is not a Git repository" do
-      expect(homebrew_foo_tap.remote).to be nil
+      expect(homebrew_foo_tap.remote).to be_nil
     end
 
     it "returns nil if Git is not available" do
       setup_git_repo
       allow(Utils::Git).to receive(:available?).and_return(false)
-      expect(homebrew_foo_tap.remote).to be nil
+      expect(homebrew_foo_tap.remote).to be_nil
     end
   end
 
@@ -240,13 +240,13 @@ describe Tap do
     end
 
     it "returns nil if the Tap is not a Git repository" do
-      expect(homebrew_foo_tap.remote_repo).to be nil
+      expect(homebrew_foo_tap.remote_repo).to be_nil
     end
 
     it "returns nil if Git is not available" do
       setup_git_repo
       allow(Utils::Git).to receive(:available?).and_return(false)
-      expect(homebrew_foo_tap.remote_repo).to be nil
+      expect(homebrew_foo_tap.remote_repo).to be_nil
     end
   end
 
@@ -289,6 +289,33 @@ describe Tap do
       }.to raise_error(TapRemoteMismatchError)
     end
 
+    it "raises an error when the remote for Homebrew/core doesn't match HOMEBREW_CORE_GIT_REMOTE" do
+      core_tap = described_class.fetch("Homebrew", "core")
+      wrong_remote = "#{Homebrew::EnvConfig.core_git_remote}-oops"
+      expect {
+        core_tap.install clone_target: wrong_remote
+      }.to raise_error(TapCoreRemoteMismatchError)
+    end
+
+    it "raises an error when run `brew tap --custom-remote` without a custom remote (already installed)" do
+      setup_git_repo
+      already_tapped_tap = described_class.new("Homebrew", "foo")
+      expect(already_tapped_tap).to be_installed
+
+      expect {
+        already_tapped_tap.install clone_target: nil, custom_remote: true
+      }.to raise_error(TapNoCustomRemoteError)
+    end
+
+    it "raises an error when run `brew tap --custom-remote` without a custom remote (not installed)" do
+      not_tapped_tap = described_class.new("Homebrew", "bar")
+      expect(not_tapped_tap).not_to be_installed
+
+      expect {
+        not_tapped_tap.install clone_target: nil, custom_remote: true
+      }.to raise_error(TapNoCustomRemoteError)
+    end
+
     describe "force_auto_update" do
       before do
         setup_git_repo
@@ -310,7 +337,7 @@ describe Tap do
       it "disables forced auto-updates when false" do
         expect(already_tapped_tap).to be_installed
         already_tapped_tap.install force_auto_update: false
-        expect(already_tapped_tap.config["forceautoupdate"]).to eq("false")
+        expect(already_tapped_tap.config["forceautoupdate"]).to be_nil
       end
     end
 
@@ -423,11 +450,11 @@ describe Tap do
   specify "#config" do
     setup_git_repo
 
-    expect(homebrew_foo_tap.config["foo"]).to be nil
+    expect(homebrew_foo_tap.config["foo"]).to be_nil
     homebrew_foo_tap.config["foo"] = "bar"
     expect(homebrew_foo_tap.config["foo"]).to eq("bar")
-    homebrew_foo_tap.config["foo"] = nil
-    expect(homebrew_foo_tap.config["foo"]).to be nil
+    homebrew_foo_tap.config.delete("foo")
+    expect(homebrew_foo_tap.config["foo"]).to be_nil
   end
 
   describe "#each" do

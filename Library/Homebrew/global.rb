@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require_relative "startup"
@@ -52,6 +52,7 @@ HOMEBREW_USER_AGENT_RUBY =
 HOMEBREW_USER_AGENT_FAKE_SAFARI =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/602.4.8 " \
   "(KHTML, like Gecko) Version/10.0.3 Safari/602.4.8"
+HOMEBREW_GITHUB_PACKAGES_AUTH = ENV["HOMEBREW_GITHUB_PACKAGES_AUTH"]
 
 HOMEBREW_DEFAULT_PREFIX = "/usr/local"
 HOMEBREW_DEFAULT_REPOSITORY = "#{HOMEBREW_DEFAULT_PREFIX}/Homebrew"
@@ -133,8 +134,5 @@ require "utils"
 require "official_taps"
 require "tap"
 require "tap_constants"
-
-# Enables `patchelf.rb` write support.
-HOMEBREW_PATCHELF_RB_WRITE = ENV["HOMEBREW_NO_PATCHELF_RB_WRITE"].blank?.freeze
 
 require "compat/late" unless Homebrew::EnvConfig.no_compat?

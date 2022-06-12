@@ -246,7 +246,8 @@ class Tap
   # @param force_auto_update [Boolean, nil] If present, whether to override the
   #   logic that skips non-GitHub repositories during auto-updates.
   # @param quiet [Boolean] If set, suppress all output.
-  def install(quiet: false, clone_target: nil, force_auto_update: nil)
+  # @param custom_remote [Boolean] If set, change the tap's remote if already installed.
+  def install(quiet: false, clone_target: nil, force_auto_update: nil, custom_remote: false)
     require "descriptions"
     require "readall"
 
@@ -257,9 +258,11 @@ class Tap
       odie "#{name} was moved. Tap homebrew/#{new_repo} instead."
     end
 
+    raise TapNoCustomRemoteError, name if custom_remote && clone_target.nil?
+
     requested_remote = clone_target || default_remote
 
-    if installed?
+    if installed? && !custom_remote
       raise TapRemoteMismatchError.new(name, @remote, requested_remote) if clone_target && requested_remote != remote
       raise TapAlreadyTappedError, name if force_auto_update.nil? && !shallow?
     end
@@ -268,8 +271,16 @@ class Tap
     Utils::Git.ensure_installed!
 
     if installed?
+      if requested_remote != remote # we are sure that clone_target is not nil and custom_remote is true here
+        fix_remote_configuration(requested_remote: requested_remote, quiet: quiet)
+      end
+
       unless force_auto_update.nil?
-        config["forceautoupdate"] = force_auto_update
+        if force_auto_update
+          config["forceautoupdate"] = force_auto_update
+        elsif config["forceautoupdate"] == "true"
+          config.delete("forceautoupdate")
+        end
         return
       end
 
@@ -297,6 +308,8 @@ class Tap
 
     begin
       safe_system "git", *args
+      # TODO: 3.6.0: consider if we want to actually read all contents of tap or odeprecate.
+
       if !Readall.valid_tap?(self, aliases: true) && !Homebrew::EnvConfig.developer?
         raise "Cannot tap #{name}: invalid syntax in tap!"
       end
@@ -321,6 +334,10 @@ class Tap
       DescriptionCacheStore.new(db)
                            .update_from_formula_names!(formula_names)
     end
+    CacheStoreDatabase.use(:cask_descriptions) do |db|
+      CaskDescriptionCacheStore.new(db)
+                               .update_from_cask_tokens!(cask_tokens)
+    end
 
     if official?
       untapped = self.class.untapped_official_taps
@@ -336,6 +353,10 @@ class Tap
     return if clone_target
     return unless private?
     return if quiet
+
+    path.cd do
+      return if Utils.popen_read("git", "config", "--get", "credential.helper").present?
+    end
 
     $stderr.puts <<~EOS
       It looks like you tapped a private repository. To avoid entering your
@@ -358,20 +379,33 @@ class Tap
     end
   end
 
-  def fix_remote_configuration
-    return unless remote.include? "github.com"
+  def fix_remote_configuration(requested_remote: nil, quiet: false)
+    if requested_remote.present?
+      path.cd do
+        safe_system "git", "remote", "set-url", "origin", requested_remote
+        safe_system "git", "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"
+      end
+      $stderr.ohai "#{name}: changed remote from #{remote} to #{requested_remote}" unless quiet
+    end
 
     current_upstream_head = path.git_origin_branch
-    return if path.git_origin_has_branch? current_upstream_head
+    return if requested_remote.blank? && path.git_origin_has_branch?(current_upstream_head)
 
-    safe_system "git", "-C", path, "fetch", "origin"
+    args = %w[fetch]
+    args << "--quiet" if quiet
+    args << "origin"
+    safe_system "git", "-C", path, *args
     path.git_origin_set_head_auto
 
     new_upstream_head = path.git_origin_branch
+    return if new_upstream_head == current_upstream_head
+
     path.git_rename_branch old: current_upstream_head, new: new_upstream_head
     path.git_branch_set_upstream local: new_upstream_head, origin: new_upstream_head
 
-    ohai "#{name}: changed default branch name from #{current_upstream_head} to #{new_upstream_head}!"
+    return if quiet
+
+    $stderr.ohai "#{name}: changed default branch name from #{current_upstream_head} to #{new_upstream_head}!"
   end
 
   # Uninstall this {Tap}.
@@ -388,6 +422,10 @@ class Tap
     CacheStoreDatabase.use(:descriptions) do |db|
       DescriptionCacheStore.new(db)
                            .delete_from_formula_names!(formula_names)
+    end
+    CacheStoreDatabase.use(:cask_descriptions) do |db|
+      CaskDescriptionCacheStore.new(db)
+                               .delete_from_cask_tokens!(cask_tokens)
     end
     Utils::Link.unlink_manpages(path)
     Utils::Link.unlink_completions(path)
@@ -416,7 +454,7 @@ class Tap
 
   # Path to the directory of all {Formula} files for this {Tap}.
   def formula_dir
-    @formula_dir ||= potential_formula_dirs.find(&:directory?) || path/"Formula"
+    @formula_dir ||= potential_formula_dirs.find(&:directory?) || (path/"Formula")
   end
 
   def potential_formula_dirs
@@ -639,7 +677,7 @@ class Tap
 
     TAP_DIRECTORY.subdirs.each do |user|
       user.subdirs.each do |repo|
-        block.call fetch(user.basename.to_s, repo.basename.to_s)
+        yield fetch(user.basename.to_s, repo.basename.to_s)
       end
     end
   end
@@ -669,6 +707,23 @@ class Tap
   # @private
   def alias_file_to_name(file)
     "#{name}/#{file.basename}"
+  end
+
+  def audit_exception(list, formula_or_cask, value = nil)
+    return false if audit_exceptions.blank?
+    return false unless audit_exceptions.key? list
+
+    list = audit_exceptions[list]
+
+    case list
+    when Array
+      list.include? formula_or_cask
+    when Hash
+      return false unless list.include? formula_or_cask
+      return list[formula_or_cask] if value.blank?
+
+      list[formula_or_cask] == value
+    end
   end
 
   private
@@ -735,24 +790,30 @@ class CoreTap < Tap
 
   def self.ensure_installed!
     return if instance.installed?
-    return if ENV["HOMEBREW_INSTALL_FROM_API"].present?
+    return if Homebrew::EnvConfig.install_from_api?
 
     safe_system HOMEBREW_BREW_FILE, "tap", instance.name
   end
 
   # CoreTap never allows shallow clones (on request from GitHub).
-  def install(quiet: false, clone_target: nil, force_auto_update: nil)
-    remote = Homebrew::EnvConfig.core_git_remote
+  def install(quiet: false, clone_target: nil, force_auto_update: nil, custom_remote: false)
+    remote = Homebrew::EnvConfig.core_git_remote # set by HOMEBREW_CORE_GIT_REMOTE
+    requested_remote = clone_target || remote
+
+    # The remote will changed again on `brew update` since remotes for Homebrew/core are mismatched
+    raise TapCoreRemoteMismatchError.new(name, remote, requested_remote) if requested_remote != remote
+
     if remote != default_remote
-      $stderr.puts "HOMEBREW_CORE_GIT_REMOTE set: using #{remote} for Homebrew/core Git remote URL."
+      $stderr.puts "HOMEBREW_CORE_GIT_REMOTE set: using #{remote} for Homebrew/core Git remote."
     end
-    super(quiet: quiet, clone_target: remote, force_auto_update: force_auto_update)
+
+    super(quiet: quiet, clone_target: remote, force_auto_update: force_auto_update, custom_remote: custom_remote)
   end
 
   # @private
   sig { params(manual: T::Boolean).void }
   def uninstall(manual: false)
-    raise "Tap#uninstall is not available for CoreTap" if ENV["HOMEBREW_INSTALL_FROM_API"].blank?
+    raise "Tap#uninstall is not available for CoreTap" unless Homebrew::EnvConfig.install_from_api?
 
     super
   end
@@ -779,6 +840,12 @@ class CoreTap < Tap
   sig { returns(T::Boolean) }
   def core_tap?
     true
+  end
+
+  # @private
+  sig { returns(T::Boolean) }
+  def linuxbrew_core?
+    remote_repo.to_s.end_with?("/linuxbrew-core") || remote_repo == "Linuxbrew/homebrew-core"
   end
 
   # @private
@@ -868,6 +935,13 @@ class TapConfig
     return unless Utils::Git.available?
 
     Homebrew::Settings.write key, value.to_s, repo: tap.path
+  end
+
+  def delete(key)
+    return unless tap.git?
+    return unless Utils::Git.available?
+
+    Homebrew::Settings.delete key, repo: tap.path
   end
 end
 

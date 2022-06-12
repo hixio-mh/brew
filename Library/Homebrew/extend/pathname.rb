@@ -231,7 +231,7 @@ class Pathname
     bottle_ext, = HOMEBREW_BOTTLES_EXTNAME_REGEX.match(basename).to_a
     return bottle_ext if bottle_ext
 
-    archive_ext = basename[/(\.(tar|cpio|pax)\.(gz|bz2|lz|xz|Z))\Z/, 1]
+    archive_ext = basename[/(\.(tar|cpio|pax)\.(gz|bz2|lz|xz|zst|Z))\Z/, 1]
     return archive_ext if archive_ext
 
     # Don't treat version numbers as extname.
@@ -450,6 +450,11 @@ class Pathname
   sig { returns(T::Boolean) }
   def dylib?
     false
+  end
+
+  sig { returns(T::Array[String]) }
+  def rpaths
+    []
   end
 end
 

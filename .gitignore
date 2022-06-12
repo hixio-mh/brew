@@ -38,6 +38,8 @@
 
 # Unignore vendored gems
 !**/vendor/bundle/ruby/*/gems/*/lib
+!**/vendor/bundle/ruby/*/gems/addressable-*/data
+!**/vendor/bundle/ruby/*/gems/public_suffix-*/data
 !**/vendor/bundle/ruby/*/gems/rubocop-performance-*/config
 !**/vendor/bundle/ruby/*/gems/rubocop-rails-*/config
 !**/vendor/bundle/ruby/*/gems/rubocop-rspec-*/config
@@ -127,6 +129,7 @@
 **/vendor/bundle/ruby/*/gems/pry-*/
 **/vendor/bundle/ruby/*/gems/racc-*/
 **/vendor/bundle/ruby/*/gems/rainbow-*/
+**/vendor/bundle/ruby/*/gems/rbi-*/
 **/vendor/bundle/ruby/*/gems/rdiscount-*/
 **/vendor/bundle/ruby/*/gems/regexp_parser-*/
 **/vendor/bundle/ruby/*/gems/rexml-*/
@@ -157,8 +160,11 @@
 **/vendor/bundle/ruby/*/gems/unf_ext-*/
 **/vendor/bundle/ruby/*/gems/unf-*/
 **/vendor/bundle/ruby/*/gems/unicode-display_width-*/
+**/vendor/bundle/ruby/*/gems/unparser-*/
 **/vendor/bundle/ruby/*/gems/uri_template-*/
 **/vendor/bundle/ruby/*/gems/webrobots-*/
+**/vendor/bundle/ruby/*/gems/yard-*/
+**/vendor/bundle/ruby/*/gems/yard-sorbet-*/
 
 # Ignore `bin` contents (again).
 /bin
@@ -177,6 +183,7 @@
 /docs/bin
 /docs/.jekyll-metadata
 /docs/vendor
+/docs/Gemfile.lock
 
 # Unignore our root-level metadata files.
 !/.dockerignore
@@ -184,6 +191,7 @@
 !/.gitignore
 !/.yardopts
 !/.vale.ini
+!/.shellcheckrc
 !/CHANGELOG.md
 !/CONTRIBUTING.md
 !/Dockerfile

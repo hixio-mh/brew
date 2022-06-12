@@ -342,7 +342,7 @@ describe Cask::DSL, :cask do
       let(:token) { "with-depends-on-formula" }
 
       it "allows depends_on formula to be specified" do
-        expect(cask.depends_on.formula).not_to be nil
+        expect(cask.depends_on.formula).not_to be_nil
       end
     end
 
@@ -350,7 +350,7 @@ describe Cask::DSL, :cask do
       let(:token) { "with-depends-on-formula-multiple" }
 
       it "allows multiple depends_on formula to be specified" do
-        expect(cask.depends_on.formula).not_to be nil
+        expect(cask.depends_on.formula).not_to be_nil
       end
     end
   end
@@ -360,7 +360,7 @@ describe Cask::DSL, :cask do
       let(:token) { "with-depends-on-cask" }
 
       it "is allowed" do
-        expect(cask.depends_on.cask).not_to be nil
+        expect(cask.depends_on.cask).not_to be_nil
       end
     end
 
@@ -368,7 +368,7 @@ describe Cask::DSL, :cask do
       let(:token) { "with-depends-on-cask-multiple" }
 
       it "is allowed" do
-        expect(cask.depends_on.cask).not_to be nil
+        expect(cask.depends_on.cask).not_to be_nil
       end
     end
   end
@@ -396,22 +396,12 @@ describe Cask::DSL, :cask do
       let(:token) { "with-depends-on-arch" }
 
       it "is allowed to be specified" do
-        expect(cask.depends_on.arch).not_to be nil
+        expect(cask.depends_on.arch).not_to be_nil
       end
     end
 
     context "with invalid depends_on arch value" do
       let(:token) { "invalid/invalid-depends-on-arch-value" }
-
-      it "refuses to load" do
-        expect { cask }.to raise_error(Cask::CaskInvalidError)
-      end
-    end
-  end
-
-  describe "depends_on x11" do
-    context "with invalid depends_on x11 value" do
-      let(:token) { "invalid/invalid-depends-on-x11-value" }
 
       it "refuses to load" do
         expect { cask }.to raise_error(Cask::CaskInvalidError)

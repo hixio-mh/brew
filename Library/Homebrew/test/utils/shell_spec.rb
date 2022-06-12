@@ -56,9 +56,9 @@ describe Utils::Shell do
     end
 
     it "returns nil when input is invalid" do
-      expect(described_class.from_path("")).to be nil
-      expect(described_class.from_path("@@@@@@")).to be nil
-      expect(described_class.from_path("invalid_shell-4.2")).to be nil
+      expect(described_class.from_path("")).to be_nil
+      expect(described_class.from_path("@@@@@@")).to be_nil
+      expect(described_class.from_path("invalid_shell-4.2")).to be_nil
     end
   end
 
@@ -98,7 +98,7 @@ describe Utils::Shell do
       ENV["SHELL"] = "/usr/local/bin/fish"
       ENV["fish_user_paths"] = "/some/path"
       expect(described_class.prepend_path_in_profile(path))
-        .to eq("echo 'fish_add_path #{path}' >> #{shell_profile}")
+        .to eq("fish_add_path #{path}")
     end
   end
 end

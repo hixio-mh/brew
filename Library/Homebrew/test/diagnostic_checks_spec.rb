@@ -16,9 +16,7 @@ describe Homebrew::Diagnostic::Checks do
       anaconda = "#{path}/anaconda"
       python = "#{path}/python"
       FileUtils.touch anaconda
-      File.open(python, "w") do |file|
-        file.write("#! #{`which bash`}\necho -n '#{python}'\n")
-      end
+      File.write(python, "#! #{`which bash`}\necho -n '#{python}'\n")
       FileUtils.chmod 0755, anaconda
       FileUtils.chmod 0755, python
 
@@ -70,7 +68,7 @@ describe Homebrew::Diagnostic::Checks do
     ENV["PATH"] = ENV["PATH"].gsub \
       %r{(?:^|#{File::PATH_SEPARATOR})#{HOMEBREW_PREFIX}/bin}o, ""
 
-    expect(checks.check_user_path_1).to be nil
+    expect(checks.check_user_path_1).to be_nil
     expect(checks.check_user_path_2)
       .to match("Homebrew's \"bin\" was not found in your PATH.")
   end
@@ -82,8 +80,8 @@ describe Homebrew::Diagnostic::Checks do
       ENV["HOMEBREW_PATH"].gsub(/(?:^|#{Regexp.escape(File::PATH_SEPARATOR)})#{Regexp.escape(sbin)}/, "")
     (sbin/"something").mkpath
 
-    expect(checks.check_user_path_1).to be nil
-    expect(checks.check_user_path_2).to be nil
+    expect(checks.check_user_path_1).to be_nil
+    expect(checks.check_user_path_2).to be_nil
     expect(checks.check_user_path_3)
       .to match("Homebrew's \"sbin\" was not found in your PATH")
   ensure

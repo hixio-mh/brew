@@ -148,25 +148,7 @@ module Cask
         Cask '#{token}' is already installed.
 
         To re-install #{token}, run:
-          #{Formatter.identifier("brew reinstall #{token}")}
-      EOS
-    end
-  end
-
-  # Error when a cask depends on X11.
-  #
-  # @api private
-  class CaskX11DependencyError < AbstractCaskErrorWithToken
-    extend T::Sig
-
-    sig { returns(String) }
-    def to_s
-      <<~EOS
-        Cask '#{token}' requires XQuartz/X11, which can be installed using Homebrew Cask by running:
-          #{Formatter.identifier("brew install --cask xquartz")}
-
-        or manually, by downloading the package from:
-          #{Formatter.url("https://www.xquartz.org/")}
+          #{Formatter.identifier("brew reinstall --cask #{token}")}
       EOS
     end
   end

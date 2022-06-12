@@ -9,9 +9,16 @@ module Homebrew
     extend T::Sig
     extend Forwardable
 
-    RUN_TYPE_IMMEDIATE = "immediate"
-    RUN_TYPE_INTERVAL = "interval"
-    RUN_TYPE_CRON = "cron"
+    RUN_TYPE_IMMEDIATE = :immediate
+    RUN_TYPE_INTERVAL = :interval
+    RUN_TYPE_CRON = :cron
+
+    PROCESS_TYPE_BACKGROUND = :background
+    PROCESS_TYPE_STANDARD = :standard
+    PROCESS_TYPE_INTERACTIVE = :interactive
+    PROCESS_TYPE_ADAPTIVE = :adaptive
+
+    KEEP_ALIVE_KEYS = [:always, :successful_exit, :crashed, :path].freeze
 
     # sig { params(formula: Formula).void }
     def initialize(formula, &block)
@@ -95,15 +102,61 @@ module Homebrew
       end
     end
 
-    sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+    sig {
+      params(value: T.nilable(T.any(T::Boolean, T::Hash[Symbol, T.untyped])))
+        .returns(T.nilable(T::Hash[Symbol, T.untyped]))
+    }
     def keep_alive(value = nil)
       case T.unsafe(value)
       when nil
         @keep_alive
       when true, false
+        @keep_alive = { always: value }
+      when Hash
+        hash = T.cast(value, Hash)
+        unless (hash.keys - KEEP_ALIVE_KEYS).empty?
+          raise TypeError, "Service#keep_alive allows only #{KEEP_ALIVE_KEYS}"
+        end
+
         @keep_alive = value
       else
-        raise TypeError, "Service#keep_alive expects a Boolean"
+        raise TypeError, "Service#keep_alive expects a Boolean or Hash"
+      end
+    end
+
+    sig { params(value: T.nilable(String)).returns(T.nilable(T::Hash[Symbol, String])) }
+    def sockets(value = nil)
+      case T.unsafe(value)
+      when nil
+        @sockets
+      when String
+        match = T.must(value).match(%r{([a-z]+)://([a-z0-9.]+):([0-9]+)}i)
+        raise TypeError, "Service#sockets a formatted socket definition as <type>://<host>:<port>" if match.blank?
+
+        type, host, port = match.captures
+        @sockets = { host: host, port: port, type: type }
+      else
+        raise TypeError, "Service#sockets expects a String"
+      end
+    end
+
+    # Returns a `Boolean` describing if a service is set to be kept alive.
+    # @return [Boolean]
+    sig { returns(T::Boolean) }
+    def keep_alive?
+      instance_eval(&@service_block)
+      @keep_alive.present? && @keep_alive[:always] != false
+    end
+
+    sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+    def launch_only_once(value = nil)
+      case T.unsafe(value)
+      when nil
+        @launch_only_once
+      when true, false
+        @launch_only_once = value
+      else
+        raise TypeError, "Service#launch_only_once expects a Boolean"
       end
     end
 
@@ -119,20 +172,104 @@ module Homebrew
       end
     end
 
-    sig { params(type: T.nilable(T.any(String, Symbol))).returns(T.nilable(String)) }
-    def run_type(type = nil)
-      case T.unsafe(type)
+    sig { params(value: T.nilable(Symbol)).returns(T.nilable(Symbol)) }
+    def process_type(value = nil)
+      case T.unsafe(value)
+      when nil
+        @process_type
+      when :background, :standard, :interactive, :adaptive
+        @process_type = value
+      when Symbol
+        raise TypeError, "Service#process_type allows: "\
+                         "'#{PROCESS_TYPE_BACKGROUND}'/'#{PROCESS_TYPE_STANDARD}'/"\
+                         "'#{PROCESS_TYPE_INTERACTIVE}'/'#{PROCESS_TYPE_ADAPTIVE}'"
+      else
+        raise TypeError, "Service#process_type expects a Symbol"
+      end
+    end
+
+    sig { params(value: T.nilable(Symbol)).returns(T.nilable(Symbol)) }
+    def run_type(value = nil)
+      case T.unsafe(value)
       when nil
         @run_type
-      when "immediate", :immediate
-        @run_type = type.to_s
-      when RUN_TYPE_INTERVAL, RUN_TYPE_CRON
-        raise TypeError, "Service#run_type does not support timers"
-      when String
+      when :immediate, :interval, :cron
+        @run_type = value
+      when Symbol
         raise TypeError, "Service#run_type allows: '#{RUN_TYPE_IMMEDIATE}'/'#{RUN_TYPE_INTERVAL}'/'#{RUN_TYPE_CRON}'"
       else
-        raise TypeError, "Service#run_type expects a string"
+        raise TypeError, "Service#run_type expects a Symbol"
       end
+    end
+
+    sig { params(value: T.nilable(Integer)).returns(T.nilable(Integer)) }
+    def interval(value = nil)
+      case T.unsafe(value)
+      when nil
+        @interval
+      when Integer
+        @interval = value
+      else
+        raise TypeError, "Service#interval expects an Integer"
+      end
+    end
+
+    sig { params(value: T.nilable(String)).returns(T.nilable(Hash)) }
+    def cron(value = nil)
+      case T.unsafe(value)
+      when nil
+        @cron
+      when String
+        @cron = parse_cron(T.must(value))
+      else
+        raise TypeError, "Service#cron expects a String"
+      end
+    end
+
+    sig { returns(T::Hash[Symbol, T.any(Integer, String)]) }
+    def default_cron_values
+      {
+        Month:   "*",
+        Day:     "*",
+        Weekday: "*",
+        Hour:    "*",
+        Minute:  "*",
+      }
+    end
+
+    sig { params(cron_statement: String).returns(T::Hash[Symbol, T.any(Integer, String)]) }
+    def parse_cron(cron_statement)
+      parsed = default_cron_values
+
+      case cron_statement
+      when "@hourly"
+        parsed[:Minute] = 0
+      when "@daily"
+        parsed[:Minute] = 0
+        parsed[:Hour] = 0
+      when "@weekly"
+        parsed[:Minute] = 0
+        parsed[:Hour] = 0
+        parsed[:Weekday] = 0
+      when "@monthly"
+        parsed[:Minute] = 0
+        parsed[:Hour] = 0
+        parsed[:Day] = 1
+      when "@yearly", "@annually"
+        parsed[:Minute] = 0
+        parsed[:Hour] = 0
+        parsed[:Day] = 1
+        parsed[:Month] = 1
+      else
+        cron_parts = cron_statement.split
+        raise TypeError, "Service#parse_cron expects a valid cron syntax" if cron_parts.length != 5
+
+        [:Minute, :Hour, :Day, :Month, :Weekday].each_with_index do |selector, index|
+          parsed[selector] = Integer(cron_parts.fetch(index)) if cron_parts.fetch(index) != "*"
+        end
+      end
+
+      parsed
     end
 
     sig { params(variables: T::Hash[String, String]).returns(T.nilable(T::Hash[String, String])) }
@@ -170,6 +307,8 @@ module Homebrew
       @run.map(&:to_s)
     end
 
+    # Returns the `String` command to run manually instead of the service.
+    # @return [String]
     sig { returns(String) }
     def manual_command
       instance_eval(&@service_block)
@@ -180,25 +319,62 @@ module Homebrew
       out.join(" ")
     end
 
+    # Returns a `Boolean` describing if a service is timed.
+    # @return [Boolean]
+    sig { returns(T::Boolean) }
+    def timed?
+      instance_eval(&@service_block)
+      @run_type == RUN_TYPE_CRON || @run_type == RUN_TYPE_INTERVAL
+    end
+
     # Returns a `String` plist.
     # @return [String]
     sig { returns(String) }
     def to_plist
+      # command needs to be first because it initializes all other values
       base = {
         Label:            @formula.plist_name,
-        RunAtLoad:        @run_type == RUN_TYPE_IMMEDIATE,
         ProgramArguments: command,
+        RunAtLoad:        @run_type == RUN_TYPE_IMMEDIATE,
       }
 
-      base[:KeepAlive] = @keep_alive if @keep_alive == true
+      base[:LaunchOnlyOnce] = @launch_only_once if @launch_only_once == true
       base[:LegacyTimers] = @macos_legacy_timers if @macos_legacy_timers == true
       base[:TimeOut] = @restart_delay if @restart_delay.present?
+      base[:ProcessType] = @process_type.to_s.capitalize if @process_type.present?
+      base[:StartInterval] = @interval if @interval.present? && @run_type == RUN_TYPE_INTERVAL
       base[:WorkingDirectory] = @working_dir if @working_dir.present?
       base[:RootDirectory] = @root_dir if @root_dir.present?
       base[:StandardInPath] = @input_path if @input_path.present?
       base[:StandardOutPath] = @log_path if @log_path.present?
       base[:StandardErrorPath] = @error_log_path if @error_log_path.present?
       base[:EnvironmentVariables] = @environment_variables unless @environment_variables.empty?
+
+      if keep_alive?
+        if (always = @keep_alive[:always].presence)
+          base[:KeepAlive] = always
+        elsif @keep_alive.key?(:successful_exit)
+          base[:KeepAlive] = { SuccessfulExit: @keep_alive[:successful_exit] }
+        elsif @keep_alive.key?(:crashed)
+          base[:KeepAlive] = { Crashed: @keep_alive[:crashed] }
+        elsif @keep_alive.key?(:path) && @keep_alive[:path].present?
+          base[:KeepAlive] = { PathState: @keep_alive[:path].to_s }
+        end
+      end
+
+      if @sockets.present?
+        base[:Sockets] = {}
+        base[:Sockets][:Listeners] = {
+          SockNodeName:    @sockets[:host],
+          SockServiceName: @sockets[:port],
+          SockProtocol:    @sockets[:type].upcase,
+          SockFamily:      "IPv4v6",
+        }
+      end
+
+      if @cron.present? && @run_type == RUN_TYPE_CRON
+        base[:StartCalendarInterval] = @cron.reject { |_, value| value == "*" }
+      end
 
       base.to_plist
     end
@@ -215,12 +391,16 @@ module Homebrew
         WantedBy=multi-user.target
 
         [Service]
-        Type=simple
-        ExecStart=#{command.join(" ")}
       EOS
 
+      # command needs to be first because it initializes all other values
+      cmd = command.join(" ")
+
       options = []
-      options << "Restart=always" if @keep_alive == true
+      options << "Type=#{@launch_only_once == true ? "oneshot" : "simple"}"
+      options << "ExecStart=#{cmd}"
+
+      options << "Restart=always" if @keep_alive.present? && @keep_alive[:always].present?
       options << "RestartSec=#{restart_delay}" if @restart_delay.present?
       options << "WorkingDirectory=#{@working_dir}" if @working_dir.present?
       options << "RootDirectory=#{@root_dir}" if @root_dir.present?
@@ -230,6 +410,35 @@ module Homebrew
       options += @environment_variables.map { |k, v| "Environment=\"#{k}=#{v}\"" } if @environment_variables.present?
 
       unit + options.join("\n")
+    end
+
+    # Returns a `String` systemd unit timer.
+    # @return [String]
+    sig { returns(String) }
+    def to_systemd_timer
+      timer = <<~EOS
+        [Unit]
+        Description=Homebrew generated timer for #{@formula.name}
+
+        [Install]
+        WantedBy=timers.target
+
+        [Timer]
+        Unit=#{@formula.service_name}
+      EOS
+
+      instance_eval(&@service_block)
+      options = []
+      options << "Persistent=true" if @run_type == RUN_TYPE_CRON
+      options << "OnUnitActiveSec=#{@interval}" if @run_type == RUN_TYPE_INTERVAL
+
+      if @run_type == RUN_TYPE_CRON
+        minutes = @cron[:Minute] == "*" ? "*" : format("%02d", @cron[:Minute])
+        hours   = @cron[:Hour] == "*" ? "*" : format("%02d", @cron[:Hour])
+        options << "OnCalendar=#{@cron[:Weekday]}-*-#{@cron[:Month]}-#{@cron[:Day]} #{hours}:#{minutes}:00"
+      end
+
+      timer + options.join("\n")
     end
   end
 end

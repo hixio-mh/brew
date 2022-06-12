@@ -11,6 +11,7 @@ module RuboCop
         PROVIDED_BY_MACOS_FORMULAE = %w[
           apr
           bc
+          berkeley-db
           bison
           bzip2
           cups
@@ -21,7 +22,6 @@ module RuboCop
           expat
           file-formula
           flex
-          gcore
           gnu-getopt
           gperf
           icu4c
@@ -32,6 +32,7 @@ module RuboCop
           libiconv
           libpcap
           libressl
+          libxcrypt
           libxml2
           libxslt
           llvm
@@ -81,11 +82,9 @@ module RuboCop
           groff
           gzip
           openssl
-          openssl@1.1
           perl
           php
           python
-          python@3
           rsync
           vim
           xz

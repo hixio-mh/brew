@@ -11,9 +11,6 @@ require "test/support/fixtures/testball_bottle"
 require "test/support/fixtures/failball"
 
 describe FormulaInstaller do
-  define_negated_matcher :need_bottle, :be_bottle_unneeded
-  alias_matcher :have_disabled_bottle, :be_bottle_disabled
-
   matcher :be_poured_from_bottle do
     match(&:poured_from_bottle)
   end
@@ -71,22 +68,6 @@ describe FormulaInstaller do
       expect(bin).to be_a_directory
       expect(bin.children.count).to eq(3)
       expect(f.prefix/".brew/testball.rb").to be_readable
-    end
-  end
-
-  specify "Formula installation with unneeded bottle" do
-    allow(DevelopmentTools).to receive(:installed?).and_return(false)
-
-    formula = Testball.new
-    allow(formula).to receive(:bottle_unneeded?).and_return(true)
-    allow(formula).to receive(:bottle_disabled?).and_return(true)
-
-    expect(formula).not_to be_bottled
-    expect(formula).not_to need_bottle
-    expect(formula).to have_disabled_bottle
-
-    temporary_install(formula) do |f|
-      expect(f).to be_latest_version_installed
     end
   end
 
@@ -245,10 +226,11 @@ describe FormulaInstaller do
 
       expect(formula).to receive(:plist).and_return(nil)
       expect(formula).to receive(:service?).exactly(3).and_return(true)
-      expect(formula).to receive(:service).twice.and_return(service)
+      expect(formula).to receive(:service).exactly(3).and_return(service)
       expect(formula).to receive(:plist_path).and_call_original
       expect(formula).to receive(:systemd_service_path).and_call_original
 
+      expect(service).to receive(:timed?).and_return(false)
       expect(service).to receive(:to_plist).and_return("plist")
       expect(service).to receive(:to_systemd_unit).and_return("unit")
 
@@ -259,6 +241,36 @@ describe FormulaInstaller do
 
       expect(plist_path).to exist
       expect(service_path).to exist
+    end
+
+    it "works if timed service is set" do
+      formula = Testball.new
+      plist_path = formula.plist_path
+      service_path = formula.systemd_service_path
+      timer_path = formula.systemd_timer_path
+      service = Homebrew::Service.new(formula)
+      formula.opt_prefix.mkpath
+
+      expect(formula).to receive(:plist).and_return(nil)
+      expect(formula).to receive(:service?).exactly(3).and_return(true)
+      expect(formula).to receive(:service).exactly(4).and_return(service)
+      expect(formula).to receive(:plist_path).and_call_original
+      expect(formula).to receive(:systemd_service_path).and_call_original
+      expect(formula).to receive(:systemd_timer_path).and_call_original
+
+      expect(service).to receive(:to_plist).and_return("plist")
+      expect(service).to receive(:timed?).and_return(true)
+      expect(service).to receive(:to_systemd_unit).and_return("unit")
+      expect(service).to receive(:to_systemd_timer).and_return("timer")
+
+      installer = described_class.new(formula)
+      expect {
+        installer.install_service
+      }.not_to output(/Error: Failed to install service files/).to_stderr
+
+      expect(plist_path).to exist
+      expect(service_path).to exist
+      expect(timer_path).to exist
     end
 
     it "returns without definition" do

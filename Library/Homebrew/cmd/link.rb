@@ -84,12 +84,12 @@ module Homebrew
       formula = begin
         keg.to_formula
       rescue FormulaUnavailableError
-        # Not all kegs may belong to formulae e.g. with `brew diy`
+        # Not all kegs may belong to formulae
         nil
       end
 
       if keg_only
-        if Homebrew.default_prefix? && formula.present? && formula.keg_only_reason.by_macos?
+        if HOMEBREW_PREFIX.to_s == HOMEBREW_DEFAULT_PREFIX && formula.present? && formula.keg_only_reason.by_macos?
           caveats = Caveats.new(formula)
           opoo <<~EOS
             Refusing to link macOS provided/shadowed software: #{keg.name}

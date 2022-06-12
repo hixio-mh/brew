@@ -28,7 +28,7 @@ describe Formula do
     let(:path) { Formulary.core_path(name) }
     let(:spec) { :stable }
     let(:alias_name) { "baz@1" }
-    let(:alias_path) { CoreTap.instance.alias_dir/alias_name }
+    let(:alias_path) { (CoreTap.instance.alias_dir/alias_name).to_s }
     let(:f) { klass.new(name, path, spec) }
     let(:f_alias) { klass.new(name, path, spec, alias_path: alias_path) }
 
@@ -38,9 +38,10 @@ describe Formula do
       expect(f.full_name).to eq(name)
       expect(f.full_specified_name).to eq(name)
       expect(f.path).to eq(path)
-      expect(f.alias_path).to be nil
-      expect(f.alias_name).to be nil
-      expect(f.full_alias_name).to be nil
+      expect(f.alias_path).to be_nil
+      expect(f.alias_name).to be_nil
+      expect(f.full_alias_name).to be_nil
+      expect(f.specified_path).to eq(path)
       expect { klass.new }.to raise_error(ArgumentError)
     end
 
@@ -51,6 +52,7 @@ describe Formula do
       expect(f_alias.alias_path).to eq(alias_path)
       expect(f_alias.alias_name).to eq(alias_name)
       expect(f_alias.specified_name).to eq(alias_name)
+      expect(f_alias.specified_path).to eq(Pathname(alias_path))
       expect(f_alias.full_alias_name).to eq(alias_name)
       expect(f_alias.full_specified_name).to eq(alias_name)
       expect { klass.new }.to raise_error(ArgumentError)
@@ -68,9 +70,10 @@ describe Formula do
         expect(f.full_name).to eq(full_name)
         expect(f.full_specified_name).to eq(full_name)
         expect(f.path).to eq(path)
-        expect(f.alias_path).to be nil
-        expect(f.alias_name).to be nil
-        expect(f.full_alias_name).to be nil
+        expect(f.alias_path).to be_nil
+        expect(f.alias_name).to be_nil
+        expect(f.full_alias_name).to be_nil
+        expect(f.specified_path).to eq(path)
         expect { klass.new }.to raise_error(ArgumentError)
       end
 
@@ -81,6 +84,7 @@ describe Formula do
         expect(f_alias.alias_path).to eq(alias_path)
         expect(f_alias.alias_name).to eq(alias_name)
         expect(f_alias.specified_name).to eq(alias_name)
+        expect(f_alias.specified_path).to eq(Pathname(alias_path))
         expect(f_alias.full_alias_name).to eq(full_alias_name)
         expect(f_alias.full_specified_name).to eq(full_alias_name)
         expect { klass.new }.to raise_error(ArgumentError)
@@ -171,9 +175,9 @@ describe Formula do
     ]
     build_values_with_no_installed_alias.each do |build|
       f.build = build
-      expect(f.installed_alias_path).to be nil
-      expect(f.installed_alias_name).to be nil
-      expect(f.full_installed_alias_name).to be nil
+      expect(f.installed_alias_path).to be_nil
+      expect(f.installed_alias_name).to be_nil
+      expect(f.full_installed_alias_name).to be_nil
       expect(f.installed_specified_name).to eq(f.name)
       expect(f.full_installed_specified_name).to eq(f.name)
     end
@@ -206,9 +210,9 @@ describe Formula do
     ]
     build_values_with_no_installed_alias.each do |build|
       f.build = build
-      expect(f.installed_alias_path).to be nil
-      expect(f.installed_alias_name).to be nil
-      expect(f.full_installed_alias_name).to be nil
+      expect(f.installed_alias_path).to be_nil
+      expect(f.installed_alias_name).to be_nil
+      expect(f.full_installed_alias_name).to be_nil
       expect(f.installed_specified_name).to eq(f.name)
       expect(f.full_installed_specified_name).to eq(f.full_name)
     end
@@ -397,7 +401,7 @@ describe Formula do
   end
 
   specify "#<=>" do
-    expect(Testball.new <=> Object.new).to be nil
+    expect(Testball.new <=> Object.new).to be_nil
   end
 
   describe "#installed_alias_path" do
@@ -410,7 +414,7 @@ describe Formula do
       f.build = BuildOptions.new(Options.new, f.options)
 
       expect(f.alias_path).to eq(alias_path)
-      expect(f.installed_alias_path).to be nil
+      expect(f.installed_alias_path).to be_nil
     end
 
     example "alias paths with tab with non alias source path" do
@@ -423,7 +427,7 @@ describe Formula do
       f.build = Tab.new(source: { "path" => source_path.to_s })
 
       expect(f.alias_path).to eq(alias_path)
-      expect(f.installed_alias_path).to be nil
+      expect(f.installed_alias_path).to be_nil
     end
 
     example "alias paths with tab with alias source path" do
@@ -563,12 +567,20 @@ describe Formula do
     expect(f.class.head).to be_kind_of(SoftwareSpec)
   end
 
+  specify "instance specs have different references" do
+    f = Testball.new
+    f2 = Testball.new
+
+    expect(f.stable.owner).to equal(f)
+    expect(f2.stable.owner).to equal(f2)
+  end
+
   specify "incomplete instance specs are not accessible" do
     f = formula do
       url "foo-1.0"
     end
 
-    expect(f.head).to be nil
+    expect(f.head).to be_nil
   end
 
   it "honors attributes declared before specs" do
@@ -707,7 +719,7 @@ describe Formula do
         url "https://brew.sh/test-1.0.tbz"
       end
 
-      expect(f.service).to eq(nil)
+      expect(f.service).to be_nil
     end
 
     specify "service complicated" do
@@ -723,7 +735,7 @@ describe Formula do
         working_dir var
         keep_alive true
       end
-      expect(f.service).not_to eq(nil)
+      expect(f.service).not_to be_nil
     end
 
     specify "service uses simple run" do
@@ -734,7 +746,7 @@ describe Formula do
         end
       end
 
-      expect(f.service).not_to eq(nil)
+      expect(f.service).not_to be_nil
     end
 
     specify "service helpers return data" do
@@ -746,6 +758,7 @@ describe Formula do
       expect(f.service_name).to eq("homebrew.formula_name")
       expect(f.plist_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.mxcl.formula_name.plist")
       expect(f.systemd_service_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.formula_name.service")
+      expect(f.systemd_timer_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.formula_name.timer")
     end
   end
 
@@ -1119,7 +1132,7 @@ describe Formula do
     specify "alias changes when not installed with alias" do
       tab.source["path"] = Formulary.core_path(f.name).to_s
 
-      expect(f.current_installed_alias_target).to be nil
+      expect(f.current_installed_alias_target).to be_nil
       expect(f.latest_formula).to eq(f)
       expect(f).not_to have_changed_installed_alias_target
       expect(f).not_to supersede_an_installed_formula
@@ -1513,7 +1526,7 @@ describe Formula do
     end
 
     it "returns nil when not installed" do
-      expect(f.any_installed_version).to be nil
+      expect(f.any_installed_version).to be_nil
     end
 
     it "returns package version when installed" do

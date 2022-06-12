@@ -5,11 +5,15 @@ require "uri"
 require "utils/github/actions"
 require "utils/github/api"
 
+require "system_command"
+
 # Wrapper functions for the GitHub API.
 #
 # @api private
 module GitHub
   extend T::Sig
+
+  include SystemCommand::Mixin
 
   module_function
 
@@ -57,7 +61,9 @@ module GitHub
     end
   end
 
-  def issues_for_formula(name, tap: CoreTap.instance, tap_remote_repo: tap.full_name, state: nil)
+  def issues_for_formula(name, tap: CoreTap.instance, tap_remote_repo: tap&.full_name, state: nil)
+    return [] unless tap_remote_repo
+
     search_issues(name, repo: tap_remote_repo, state: state, in: "title")
   end
 
@@ -72,6 +78,13 @@ module GitHub
   def write_access?(repo, user = nil)
     user ||= self.user["login"]
     ["admin", "write"].include?(permission(repo, user)["permission"])
+  end
+
+  def branch_exists?(user, repo, branch)
+    API.open_rest("#{API_URL}/repos/#{user}/#{repo}/branches/#{branch}")
+    true
+  rescue API::HTTPNotFoundError
+    false
   end
 
   def pull_requests(repo, **options)
@@ -225,6 +238,13 @@ module GitHub
     API.open_rest(url, request_method: :GET)
   end
 
+  def generate_release_notes(user, repo, tag, previous_tag: nil)
+    url = "#{API_URL}/repos/#{user}/#{repo}/releases/generate-notes"
+    data = { tag_name: tag }
+    data[:previous_tag_name] = previous_tag if previous_tag.present?
+    API.open_rest(url, data: data, request_method: :POST, scopes: CREATE_ISSUE_FORK_OR_PR_SCOPES)
+  end
+
   def create_or_update_release(user, repo, tag, id: nil, name: nil, body: nil, draft: false)
     url = "#{API_URL}/repos/#{user}/#{repo}/releases"
     method = if id
@@ -250,41 +270,77 @@ module GitHub
 
   def get_workflow_run(user, repo, pr, workflow_id: "tests.yml", artifact_name: "bottles")
     scopes = CREATE_ISSUE_FORK_OR_PR_SCOPES
-    base_url = "#{API_URL}/repos/#{user}/#{repo}"
-    pr_payload = API.open_rest("#{base_url}/pulls/#{pr}", scopes: scopes)
-    pr_sha = pr_payload["head"]["sha"]
-    pr_branch = URI.encode_www_form_component(pr_payload["head"]["ref"])
-    parameters = "event=pull_request&branch=#{pr_branch}"
 
-    workflow = API.open_rest("#{base_url}/actions/workflows/#{workflow_id}/runs?#{parameters}", scopes: scopes)
-    workflow_run = workflow["workflow_runs"].select do |run|
-      run["head_sha"] == pr_sha
+    # GraphQL unfortunately has no way to get the workflow yml name, so we need an extra REST call.
+    workflow_api_url = "#{API_URL}/repos/#{user}/#{repo}/actions/workflows/#{workflow_id}"
+    workflow_payload = API.open_rest(workflow_api_url, scopes: scopes)
+    workflow_id_num = workflow_payload["id"]
+
+    query = <<~EOS
+      query ($user: String!, $repo: String!, $pr: Int!) {
+        repository(owner: $user, name: $repo) {
+          pullRequest(number: $pr) {
+            commits(last: 1) {
+              nodes {
+                commit {
+                  checkSuites(first: 100) {
+                    nodes {
+                      status,
+                      workflowRun {
+                        databaseId,
+                        url,
+                        workflow {
+                          databaseId
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    EOS
+    variables = {
+      user: user,
+      repo: repo,
+      pr:   pr.to_i,
+    }
+    result = API.open_graphql(query, variables: variables, scopes: scopes)
+
+    commit_node = result["repository"]["pullRequest"]["commits"]["nodes"].first
+    check_suite = if commit_node.present?
+      commit_node["commit"]["checkSuites"]["nodes"].select do |suite|
+        suite.dig("workflowRun", "workflow", "databaseId") == workflow_id_num
+      end
+    else
+      []
     end
 
-    [workflow_run, pr_sha, pr_branch, pr, workflow_id, scopes, artifact_name]
+    [check_suite, user, repo, pr, workflow_id, scopes, artifact_name]
   end
 
   def get_artifact_url(workflow_array)
-    workflow_run, pr_sha, pr_branch, pr, workflow_id, scopes, artifact_name = *workflow_array
-    if workflow_run.empty?
+    check_suite, user, repo, pr, workflow_id, scopes, artifact_name = *workflow_array
+    if check_suite.empty?
       raise API::Error, <<~EOS
-        No matching workflow run found for these criteria!
-          Commit SHA:   #{pr_sha}
-          Branch ref:   #{pr_branch}
+        No matching check suite found for these criteria!
           Pull request: #{pr}
           Workflow:     #{workflow_id}
       EOS
     end
 
-    status = workflow_run.first["status"].sub("_", " ")
+    status = check_suite.first["status"].sub("_", " ").downcase
     if status != "completed"
       raise API::Error, <<~EOS
         The newest workflow run for ##{pr} is still #{status}!
-          #{Formatter.url workflow_run.first["html_url"]}
+          #{Formatter.url check_suite.first["workflowRun"]["url"]}
       EOS
     end
 
-    artifacts = API.open_rest(workflow_run.first["artifacts_url"], scopes: scopes)
+    run_id = check_suite.first["workflowRun"]["databaseId"]
+    artifacts = API.open_rest("#{API_URL}/repos/#{user}/#{repo}/actions/runs/#{run_id}/artifacts", scopes: scopes)
 
     artifact = artifacts["artifacts"].select do |art|
       art["name"] == artifact_name
@@ -293,11 +349,11 @@ module GitHub
     if artifact.empty?
       raise API::Error, <<~EOS
         No artifact with the name `#{artifact_name}` was found!
-          #{Formatter.url workflow_run.first["html_url"]}
+          #{Formatter.url check_suite.first["workflowRun"]["url"]}
       EOS
     end
 
-    artifact.first["archive_download_url"]
+    artifact.last["archive_download_url"]
   end
 
   def public_member_usernames(org, per_page: 100)
@@ -338,7 +394,7 @@ module GitHub
     end
     raise API::Error, "The team #{org}/#{team} does not exist" if result["organization"]["team"].blank?
 
-    result["organization"]["team"]["members"]["nodes"].map { |member| [member["login"], member["name"]] }.to_h
+    result["organization"]["team"]["members"]["nodes"].to_h { |member| [member["login"], member["name"]] }
   end
 
   def sponsors_by_tier(user)
@@ -481,7 +537,7 @@ module GitHub
       changed_files = [sourcefile_path]
       changed_files += additional_files if additional_files.present?
 
-      if args.dry_run? || (args.write? && !args.commit?)
+      if args.dry_run? || (args.write_only? && !args.commit?)
         remote_url = if args.no_fork?
           Utils.popen_read("git", "remote", "get-url", "--push", "origin").chomp
         else
@@ -523,7 +579,8 @@ module GitHub
                     "--", *changed_files
         return if args.commit?
 
-        safe_system "git", "push", "--set-upstream", remote_url, "#{branch}:#{branch}"
+        system_command!("git", args:         ["push", "--set-upstream", remote_url, "#{branch}:#{branch}"],
+                               print_stdout: true)
         safe_system "git", "checkout", "--quiet", previous_branch
         pr_message = <<~EOS
           #{pr_message}

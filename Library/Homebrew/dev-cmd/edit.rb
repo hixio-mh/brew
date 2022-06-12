@@ -21,6 +21,8 @@ module Homebrew
              description: "Treat all named arguments as formulae."
       switch "--cask", "--casks",
              description: "Treat all named arguments as casks."
+      switch "--print-path",
+             description: "Print the file path to be edited, without opening an editor."
 
       conflicts "--formula", "--cask"
 
@@ -53,10 +55,26 @@ module Homebrew
       args.named.to_paths.select do |path|
         next path if path.exist?
 
-        raise UsageError, "#{path} doesn't exist on disk. " \
-                          "Run #{Formatter.identifier("brew create --set-name #{path.basename} $URL")} " \
-                          "to create a new formula!"
+        message = if args.cask?
+          <<~EOS
+            #{path.basename(".rb")} doesn't exist on disk. \
+            Run #{Formatter.identifier("brew create --cask --set-name #{path.basename(".rb")} $URL")} \
+            to create a new cask!
+          EOS
+        else
+          <<~EOS
+            #{path} doesn't exist on disk. \
+            Run #{Formatter.identifier("brew create --formula --set-name #{path.basename} $URL")} \
+            to create a new formula!
+          EOS
+        end
+        raise UsageError, message
       end.presence
+    end
+
+    if args.print_path?
+      paths.each(&method(:puts))
+      return
     end
 
     exec_editor(*paths)

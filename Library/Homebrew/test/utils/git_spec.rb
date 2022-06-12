@@ -12,31 +12,31 @@ describe Utils::Git do
   end
 
   before do
-    git = HOMEBREW_SHIMS_PATH/"scm/git"
+    git = HOMEBREW_SHIMS_PATH/"shared/git"
 
     HOMEBREW_CACHE.cd do
       system git, "init"
 
-      File.open("README.md", "w") { |f| f.write("README") }
+      File.write("README.md", "README")
       system git, "add", HOMEBREW_CACHE/"README.md"
       system git, "commit", "-m", "File added"
       @h1 = `git rev-parse HEAD`
 
-      File.open("README.md", "w") { |f| f.write("# README") }
+      File.write("README.md", "# README")
       system git, "add", HOMEBREW_CACHE/"README.md"
       system git, "commit", "-m", "written to File"
       @h2 = `git rev-parse HEAD`
 
-      File.open("LICENSE.txt", "w") { |f| f.write("LICENCE") }
+      File.write("LICENSE.txt", "LICENCE")
       system git, "add", HOMEBREW_CACHE/"LICENSE.txt"
       system git, "commit", "-m", "File added"
       @h3 = `git rev-parse HEAD`
 
-      File.open("LICENSE.txt", "w") { |f| f.write("LICENSE") }
+      File.write("LICENSE.txt", "LICENSE")
       system git, "add", HOMEBREW_CACHE/"LICENSE.txt"
       system git, "commit", "-m", "written to File"
 
-      File.open("LICENSE.txt", "w") { |f| f.write("test") }
+      File.write("LICENSE.txt", "test")
       system git, "add", HOMEBREW_CACHE/"LICENSE.txt"
       system git, "commit", "-m", "written to File"
       @cherry_pick_commit = `git rev-parse HEAD`
@@ -142,7 +142,7 @@ describe Utils::Git do
   describe "::path" do
     it "returns nil when git is not available" do
       stub_const("HOMEBREW_SHIMS_PATH", HOMEBREW_PREFIX/"bin/shim")
-      expect(described_class.path).to eq(nil)
+      expect(described_class.path).to be_nil
     end
 
     it "returns path of git when git is available" do
@@ -153,7 +153,7 @@ describe Utils::Git do
   describe "::version" do
     it "returns nil when git is not available" do
       stub_const("HOMEBREW_SHIMS_PATH", HOMEBREW_PREFIX/"bin/shim")
-      expect(described_class.version).to eq(nil)
+      expect(described_class.version).to be_nil
     end
 
     it "returns version of git when git is available" do
@@ -184,7 +184,7 @@ describe Utils::Git do
       unless ENV["HOMEBREW_TEST_GENERIC_OS"]
         it "installs git" do
           expect(described_class).to receive(:available?).and_return(false)
-          expect(described_class).to receive(:safe_system).with(HOMEBREW_BREW_FILE, "install", "git").and_return(true)
+          expect(described_class).to receive(:ensure_formula_installed!).with("git")
           expect(described_class).to receive(:available?).and_return(true)
 
           described_class.ensure_installed!
@@ -201,7 +201,7 @@ describe Utils::Git do
 
     context "when git is available" do
       it "returns true when git remote exists", :needs_network do
-        git = HOMEBREW_SHIMS_PATH/"scm/git"
+        git = HOMEBREW_SHIMS_PATH/"shared/git"
         url = "https://github.com/Homebrew/homebrew.github.io"
         repo = HOMEBREW_CACHE/"hey"
         repo.mkpath

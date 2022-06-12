@@ -35,6 +35,7 @@ class Sandbox
 
   def allow_write(path, options = {})
     add_rule allow: true, operation: "file-write*", filter: path_filter(path, options[:type])
+    add_rule allow: true, operation: "file-write-setugid", filter: path_filter(path, options[:type])
   end
 
   def deny_write(path, options = {})
@@ -113,20 +114,45 @@ class Sandbox
             [Utils.popen_read("tput", "lines").to_i, Utils.popen_read("tput", "cols").to_i]
           end
         end
-        # Update the window size whenever the parent terminal's window size changes.
-        old_winch = trap(:WINCH, &winch)
-        winch.call(nil)
 
-        $stdin.raw! if $stdin.tty?
-        stdin_thread = Thread.new { IO.copy_stream($stdin, w) }
+        write_to_pty = proc do
+          # Don't hang if stdin is not able to be used - throw EIO instead.
+          old_ttin = trap(:TTIN, "IGNORE")
 
-        r.each_char { |c| print(c) }
+          # Update the window size whenever the parent terminal's window size changes.
+          old_winch = trap(:WINCH, &winch)
+          winch.call(nil)
 
-        Process.wait(pid)
-      ensure
-        stdin_thread&.kill
-        $stdin.cooked! if $stdin.tty?
-        trap(:WINCH, old_winch)
+          stdin_thread = Thread.new do
+            IO.copy_stream($stdin, w)
+          rescue Errno::EIO
+            # stdin is unavailable - move on.
+          end
+
+          r.each_char { |c| print(c) }
+
+          Process.wait(pid)
+        ensure
+          stdin_thread&.kill
+          trap(:TTIN, old_ttin)
+          trap(:WINCH, old_winch)
+        end
+
+        if $stdin.tty?
+          # If stdin is a TTY, use io.raw to set stdin to a raw, passthrough
+          # mode while we copy the input/output of the process spawned in the
+          # PTY. After we've finished copying to/from the PTY process, io.raw
+          # will restore the stdin TTY to its original state.
+          begin
+            # Ignore SIGTTOU as setting raw mode will hang if the process is in the background.
+            old_ttou = trap(:TTOU, "IGNORE")
+            $stdin.raw(&write_to_pty)
+          ensure
+            trap(:TTOU, old_ttou)
+          end
+        else
+          write_to_pty.call
+        end
       end
       raise ErrorDuringExecution.new(command, status: $CHILD_STATUS) unless $CHILD_STATUS.success?
     rescue

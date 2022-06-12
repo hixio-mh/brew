@@ -12,7 +12,7 @@ module OS
     def os_version
       if which("lsb_release")
         lsb_info = Utils.popen_read("lsb_release", "-a")
-        description = lsb_info[/^Description:\s*(.*)$/, 1]
+        description = lsb_info[/^Description:\s*(.*)$/, 1].force_encoding("UTF-8")
         codename = lsb_info[/^Codename:\s*(.*)$/, 1]
         if codename.blank? || (codename == "n/a")
           description
@@ -40,11 +40,11 @@ module OS
     raise "Loaded OS::Linux on generic OS!" if ENV["HOMEBREW_TEST_GENERIC_OS"]
 
     def version
-      Version::NULL
+      ::Version::NULL
     end
 
     def full_version
-      Version::NULL
+      ::Version::NULL
     end
 
     def languages
@@ -71,7 +71,7 @@ module OS
       module_function
 
       def version
-        Version::NULL
+        ::Version::NULL
       end
 
       def installed?
@@ -83,7 +83,7 @@ module OS
       module_function
 
       def version
-        Version::NULL
+        ::Version::NULL
       end
 
       def installed?

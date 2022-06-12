@@ -35,12 +35,24 @@ module Homebrew
       # `Utils::Curl` method calls in {Strategy}.
       CURL_PROCESS_TIMEOUT = CURL_MAX_TIME + 5
 
+      # The maximum number of redirections that `curl` should allow.
+      MAX_REDIRECTIONS = 5
+
+      # This value is passed to `#parse_curl_output` to ensure that the limit
+      # for the number of responses it will parse corresponds to the maximum
+      # number of responses in this context. The `+ 1` here accounts for the
+      # situation where there are exactly `MAX_REDIRECTIONS` number of
+      # redirections, followed by a final `200 OK` response.
+      MAX_PARSE_ITERATIONS = MAX_REDIRECTIONS + 1
+
       # Baseline `curl` arguments used in {Strategy} methods.
       DEFAULT_CURL_ARGS = [
         # Follow redirections to handle mirrors, relocations, etc.
         "--location",
-        "--connect-timeout", CURL_CONNECT_TIMEOUT,
-        "--max-time", CURL_MAX_TIME
+        "--max-redirs", MAX_REDIRECTIONS.to_s,
+        # Avoid progress bar text, so we can reliably identify `curl` error
+        # messages in output
+        "--silent"
       ].freeze
 
       # `curl` arguments used in `Strategy#page_headers` method.
@@ -48,8 +60,7 @@ module Homebrew
         # We only need the response head (not the body)
         "--head",
         # Some servers may not allow a HEAD request, so we use GET
-        "--request", "GET",
-        "--silent"
+        "--request", "GET"
       ] + DEFAULT_CURL_ARGS).freeze
 
       # `curl` arguments used in `Strategy#page_content` method.
@@ -62,18 +73,15 @@ module Homebrew
 
       # Baseline `curl` options used in {Strategy} methods.
       DEFAULT_CURL_OPTIONS = {
-        print_stdout: false,
-        print_stderr: false,
-        debug:        false,
-        verbose:      false,
-        timeout:      CURL_PROCESS_TIMEOUT,
-        retry:        false,
+        print_stdout:    false,
+        print_stderr:    false,
+        debug:           false,
+        verbose:         false,
+        timeout:         CURL_PROCESS_TIMEOUT,
+        connect_timeout: CURL_CONNECT_TIMEOUT,
+        max_time:        CURL_MAX_TIME,
+        retries:         0,
       }.freeze
-
-      # HTTP response head(s) and body are typically separated by a double
-      # `CRLF` (whereas HTTP header lines are separated by a single `CRLF`).
-      # In rare cases, this can also be a double newline (`\n\n`).
-      HTTP_HEAD_BODY_SEPARATOR = "\r\n\r\n"
 
       # A regex used to identify a tarball extension at the end of a string.
       TARBALL_EXTENSION_REGEX = /
@@ -116,7 +124,7 @@ module Homebrew
       # @param symbol [Symbol, nil] the strategy name in snake case as a
       #   `Symbol` (e.g. `:page_match`)
       # @return [Class, nil]
-      sig { params(symbol: T.nilable(Symbol)).returns(T.nilable(T.untyped)) }
+      sig { params(symbol: T.nilable(Symbol)).returns(T.untyped) }
       def from_symbol(symbol)
         strategies[symbol] if symbol.present?
       end
@@ -171,27 +179,24 @@ module Homebrew
       # collected into an array of hashes.
       #
       # @param url [String] the URL to fetch
+      # @param homebrew_curl [Boolean] whether to use brewed curl with the URL
       # @return [Array]
-      sig { params(url: String).returns(T::Array[T::Hash[String, String]]) }
-      def self.page_headers(url)
+      sig { params(url: String, homebrew_curl: T::Boolean).returns(T::Array[T::Hash[String, String]]) }
+      def self.page_headers(url, homebrew_curl: false)
         headers = []
 
         [:default, :browser].each do |user_agent|
-          stdout, _, status = curl_with_workarounds(
+          output, _, status = curl_with_workarounds(
             *PAGE_HEADERS_CURL_ARGS, url,
             **DEFAULT_CURL_OPTIONS,
-            user_agent: user_agent
+            use_homebrew_curl: homebrew_curl,
+            user_agent:        user_agent
           )
+          next unless status.success?
 
-          while stdout.match?(/\AHTTP.*\r$/)
-            h, stdout = stdout.split("\r\n\r\n", 2)
-
-            headers << h.split("\r\n").drop(1)
-                        .map { |header| header.split(/:\s*/, 2) }
-                        .to_h.transform_keys(&:downcase)
-          end
-
-          return headers if status.success?
+          parsed_output = parse_curl_output(output, max_iterations: MAX_PARSE_ITERATIONS)
+          parsed_output[:responses].each { |response| headers << response[:headers] }
+          break if headers.present?
         end
 
         headers
@@ -203,17 +208,17 @@ module Homebrew
       # array with the error message instead.
       #
       # @param url [String] the URL of the content to check
+      # @param homebrew_curl [Boolean] whether to use brewed curl with the URL
       # @return [Hash]
-      sig { params(url: String).returns(T::Hash[Symbol, T.untyped]) }
-      def self.page_content(url)
-        original_url = url
-
+      sig { params(url: String, homebrew_curl: T::Boolean).returns(T::Hash[Symbol, T.untyped]) }
+      def self.page_content(url, homebrew_curl: false)
         stderr = nil
         [:default, :browser].each do |user_agent|
           stdout, stderr, status = curl_with_workarounds(
             *PAGE_CONTENT_CURL_ARGS, url,
             **DEFAULT_CURL_OPTIONS,
-            user_agent: user_agent
+            use_homebrew_curl: homebrew_curl,
+            user_agent:        user_agent
           )
           next unless status.success?
 
@@ -223,34 +228,16 @@ module Homebrew
 
           # Separate the head(s)/body and identify the final URL (after any
           # redirections)
-          max_iterations = 5
-          iterations = 0
-          output = output.lstrip
-          while output.match?(%r{\AHTTP/[\d.]+ \d+}) && output.include?(HTTP_HEAD_BODY_SEPARATOR)
-            iterations += 1
-            raise "Too many redirects (max = #{max_iterations})" if iterations > max_iterations
+          parsed_output = parse_curl_output(output, max_iterations: MAX_PARSE_ITERATIONS)
+          final_url = curl_response_last_location(parsed_output[:responses], absolutize: true, base_url: url)
 
-            head_text, _, output = output.partition(HTTP_HEAD_BODY_SEPARATOR)
-            output = output.lstrip
-
-            location = head_text[/^Location:\s*(.*)$/i, 1]
-            next if location.blank?
-
-            location.chomp!
-            # Convert a relative redirect URL to an absolute URL
-            location = URI.join(url, location) unless location.match?(PageMatch::URL_MATCH_REGEX)
-            final_url = location
-          end
-
-          data = { content: output }
-          data[:final_url] = final_url if final_url.present? && final_url != original_url
+          data = { content: parsed_output[:body] }
+          data[:final_url] = final_url if final_url.present? && final_url != url
           return data
         end
 
-        /^(?<error_msg>curl: \(\d+\) .+)/ =~ stderr
-        {
-          messages: [error_msg.presence || "cURL failed without an error"],
-        }
+        error_msgs = stderr&.scan(/^curl:.+$/)
+        { messages: error_msgs.presence || ["cURL failed without a detectable error"] }
       end
 
       # Handles the return value from a `strategy` block in a `livecheck`

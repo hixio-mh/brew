@@ -77,7 +77,7 @@ module Homebrew
       def to_formulae_to_casks(only: parent&.only_formula_or_cask, method: nil)
         @to_formulae_to_casks ||= {}
         @to_formulae_to_casks[[method, only]] = to_formulae_and_casks(only: only, method: method)
-                                                .partition { |o| o.is_a?(Formula) }
+                                                .partition { |o| o.is_a?(Formula) || o.is_a?(Keg) }
                                                 .map(&:freeze).freeze
       end
 
@@ -94,7 +94,7 @@ module Homebrew
         unreadable_error = nil
 
         if only != :cask
-          if prefer_loading_from_api && ENV["HOMEBREW_INSTALL_FROM_API"].present? &&
+          if prefer_loading_from_api && Homebrew::EnvConfig.install_from_api? &&
              Homebrew::API::Bottle.available?(name)
             Homebrew::API::Bottle.fetch_bottles(name)
           end
@@ -108,10 +108,6 @@ module Homebrew
             when :latest_kegs
               resolve_latest_keg(name)
             when :default_kegs
-              resolve_default_keg(name)
-            when :keg
-              odeprecated "`load_formula_or_cask` with `method: :keg`",
-                          "`load_formula_or_cask` with `method: :default_kegs`"
               resolve_default_keg(name)
             when :kegs
               _, kegs = resolve_kegs(name)
@@ -133,10 +129,12 @@ module Homebrew
         end
 
         if only != :formula
-          if prefer_loading_from_api && ENV["HOMEBREW_INSTALL_FROM_API"].present? &&
+          if prefer_loading_from_api && Homebrew::EnvConfig.install_from_api? &&
              Homebrew::API::CaskSource.available?(name)
             contents = Homebrew::API::CaskSource.fetch(name)
           end
+
+          want_keg_like_cask = [:latest_kegs, :default_kegs, :kegs].include?(method)
 
           begin
             config = Cask::Config.from_args(@parent) if @cask_options
@@ -150,8 +148,24 @@ module Homebrew
               opoo "Treating #{name} as a cask."
             end
 
+            # If we're trying to get a keg-like Cask, do our best to use the same cask
+            # file that was used for installation, if possible.
+            if want_keg_like_cask && (installed_caskfile = cask.installed_caskfile) && installed_caskfile.exist?
+              cask = Cask::CaskLoader.load(installed_caskfile)
+            end
+
             return cask
-          rescue Cask::CaskUnreadableError => e
+          rescue Cask::CaskUnreadableError, Cask::CaskInvalidError => e
+            # If we're trying to get a keg-like Cask, do our best to handle it
+            # not being readable and return something that can be used.
+            if want_keg_like_cask
+              cask_version = Cask::Cask.new(name, config: config).versions.first
+              cask = Cask::Cask.new(name, config: config) do
+                version cask_version if cask_version
+              end
+              return cask
+            end
+
             # Need to rescue before `CaskUnavailableError` (superclass of this)
             # The cask was found, but there's a problem with its implementation
             unreadable_error ||= e
@@ -167,6 +181,8 @@ module Homebrew
           tap = Tap.fetch(user, repo)
           raise TapFormulaOrCaskUnavailableError.new(tap, short_name)
         end
+
+        raise NoSuchKegError, name if resolve_formula(name)
 
         raise FormulaOrCaskUnavailableError, name
       end
@@ -185,10 +201,6 @@ module Homebrew
 
       def to_resolved_formulae_to_casks(only: parent&.only_formula_or_cask)
         to_formulae_to_casks(only: only, method: :resolve)
-      end
-
-      def to_formulae_paths
-        to_paths(only: :formula)
       end
 
       # Keep existing paths and try to convert others to tap, formula or cask paths.
@@ -319,7 +331,7 @@ module Homebrew
         rack = Formulary.to_rack(name.downcase)
 
         kegs = rack.directory? ? rack.subdirs.map { |d| Keg.new(d) } : []
-        raise NoSuchKegError, rack.basename if kegs.none?
+        raise NoSuchKegError, name if kegs.none?
 
         [rack, kegs]
       end

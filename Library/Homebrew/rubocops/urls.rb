@@ -21,7 +21,7 @@ module RuboCop
           end
 
           # GNU URLs; doesn't apply to mirrors
-          gnu_pattern = %r{^(?:https?|ftp)://ftpmirror.gnu.org/(.*)}
+          gnu_pattern = %r{^(?:https?|ftp)://ftpmirror\.gnu\.org/(.*)}
           audit_urls(urls, gnu_pattern) do |match, url|
             problem "Please use \"https://ftp.gnu.org/gnu/#{match[1]}\" instead of #{url}."
           end
@@ -83,8 +83,14 @@ module RuboCop
                                                  %r{^http://(?:[^/]*\.)?archive\.org},
                                                  %r{^http://(?:[^/]*\.)?freedesktop\.org},
                                                  %r{^http://(?:[^/]*\.)?mirrorservice\.org/}])
-          audit_urls(urls, http_to_https_patterns) do |_, url|
-            problem "Please use https:// for #{url}"
+          audit_urls(urls, http_to_https_patterns) do |_, url, index|
+            # It's fine to have a plain HTTP mirror further down the mirror list.
+            https_url = url.dup.insert(4, "s")
+            https_index = nil
+            audit_urls(urls, https_url) do |_, _, found_https_index|
+              https_index = found_https_index
+            end
+            problem "Please use https:// for #{url}" if !https_index || https_index > index
           end
 
           apache_mirror_pattern = %r{^https?://(?:[^/]*\.)?apache\.org/dyn/closer\.(?:cgi|lua)\?path=/?(.*)}i
@@ -171,7 +177,7 @@ module RuboCop
           end
 
           # Check for new-url Google Code download URLs, https:// is preferred
-          google_code_pattern = Regexp.union([%r{^http://.*\.googlecode\.com/files.*},
+          google_code_pattern = Regexp.union([%r{^http://[A-Za-z0-9\-.]*\.googlecode\.com/files.*},
                                               %r{^http://code\.google\.com/}])
           audit_urls(urls, google_code_pattern) do |_, url|
             problem "Please use https:// for #{url}"
@@ -261,13 +267,13 @@ module RuboCop
           urls += mirrors
 
           # Check pypi URLs
-          pypi_pattern = %r{^https?://pypi.python.org/}
+          pypi_pattern = %r{^https?://pypi\.python\.org/}
           audit_urls(urls, pypi_pattern) do |_, url|
             problem "use the `Source` url found on PyPI downloads page (`#{get_pypi_url(url)}`)"
           end
 
           # Require long files.pythonhosted.org URLs
-          pythonhosted_pattern = %r{^https?://files.pythonhosted.org/packages/source/}
+          pythonhosted_pattern = %r{^https?://files\.pythonhosted\.org/packages/source/}
           audit_urls(urls, pythonhosted_pattern) do |_, url|
             problem "use the `Source` url found on PyPI downloads page (`#{get_pypi_url(url)}`)"
           end

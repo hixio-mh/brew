@@ -146,7 +146,7 @@ RSpec.configure do |config|
   end
 
   config.before(:each, :needs_svn) do
-    svn_shim = HOMEBREW_SHIMS_PATH/"scm/svn"
+    svn_shim = HOMEBREW_SHIMS_PATH/"shared/svn"
     skip "Subversion is not installed." unless quiet_system svn_shim, "--version"
 
     svn_shim_path = Pathname(Utils.popen_read(svn_shim, "--homebrew=print-path").chomp.presence)
@@ -167,6 +167,13 @@ RSpec.configure do |config|
     ENV["PATH"] = PATH.new(ENV["PATH"])
                       .append(svn.dirname)
                       .append(svnadmin.dirname)
+  end
+
+  config.before(:each, :needs_homebrew_curl) do
+    ENV["HOMEBREW_CURL"] = ENV["HOMEBREW_BREWED_CURL_PATH"]
+    skip "A `curl` with TLS 1.3 support is required." unless curl_supports_tls13?
+  rescue FormulaUnavailableError
+    skip "No `curl` formula is available."
   end
 
   config.before(:each, :needs_unzip) do
@@ -195,6 +202,7 @@ RSpec.configure do |config|
     Requirement.clear_cache
     FormulaInstaller.clear_attempted
     FormulaInstaller.clear_installed
+    FormulaInstaller.clear_fetched
 
     TEST_DIRECTORIES.each(&:mkpath)
 
@@ -206,12 +214,14 @@ RSpec.configure do |config|
 
     @__stdout = $stdout.clone
     @__stderr = $stderr.clone
+    @__stdin = $stdin.clone
 
     begin
       if (example.metadata.keys & [:focus, :byebug]).empty? && !ENV.key?("HOMEBREW_VERBOSE_TESTS")
         $stdout.reopen(File::NULL)
         $stderr.reopen(File::NULL)
       end
+      $stdin.reopen(File::NULL)
 
       begin
         timeout = example.metadata.fetch(:timeout, 60)
@@ -228,8 +238,10 @@ RSpec.configure do |config|
 
       $stdout.reopen(@__stdout)
       $stderr.reopen(@__stderr)
+      $stdin.reopen(@__stdin)
       @__stdout.close
       @__stderr.close
+      @__stdin.close
 
       Formulary.clear_cache
       Tap.clear_cache
@@ -280,6 +292,7 @@ RSpec.configure do |config|
 end
 
 RSpec::Matchers.define_negated_matcher :not_to_output, :output
+RSpec::Matchers.define_negated_matcher :not_raise_error, :raise_error
 RSpec::Matchers.alias_matcher :have_failed, :be_failed
 RSpec::Matchers.alias_matcher :a_string_containing, :include
 

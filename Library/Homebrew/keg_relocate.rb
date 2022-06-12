@@ -7,11 +7,14 @@ class Keg
   REPOSITORY_PLACEHOLDER = "@@HOMEBREW_REPOSITORY@@"
   LIBRARY_PLACEHOLDER = "@@HOMEBREW_LIBRARY@@"
   PERL_PLACEHOLDER = "@@HOMEBREW_PERL@@"
+  JAVA_PLACEHOLDER = "@@HOMEBREW_JAVA@@"
+  NULL_BYTE = "\x00"
+  NULL_BYTE_STRING = "\\x00"
 
   class Relocation
     extend T::Sig
 
-    RELOCATABLE_PATH_REGEX_PREFIX = /(?<![a-zA-Z0-9])/.freeze
+    RELOCATABLE_PATH_REGEX_PREFIX = /(?:(?<=-F|-I|-L|-isystem)|(?<![a-zA-Z0-9]))/.freeze
 
     def initialize
       @replacement_map = {}
@@ -82,6 +85,8 @@ class Keg
     []
   end
 
+  JAVA_REGEX = %r{#{HOMEBREW_PREFIX}/opt/openjdk(@\d+(\.\d+)*)?/libexec(/openjdk\.jdk/Contents/Home)?}.freeze
+
   def prepare_relocation_to_placeholders
     relocation = Relocation.new
     relocation.add_replacement_pair(:prefix, HOMEBREW_PREFIX.to_s, PREFIX_PLACEHOLDER, path: true)
@@ -95,6 +100,8 @@ class Keg
     relocation.add_replacement_pair(:perl,
                                     %r{\A#!(?:/usr/bin/perl\d\.\d+|#{HOMEBREW_PREFIX}/opt/perl/bin/perl)( |$)}o,
                                     "#!#{PERL_PLACEHOLDER}\\1")
+    relocation.add_replacement_pair(:java, JAVA_REGEX, JAVA_PLACEHOLDER)
+
     relocation
   end
   alias generic_prepare_relocation_to_placeholders prepare_relocation_to_placeholders
@@ -112,6 +119,10 @@ class Keg
     relocation.add_replacement_pair(:repository, REPOSITORY_PLACEHOLDER, HOMEBREW_REPOSITORY.to_s)
     relocation.add_replacement_pair(:library, LIBRARY_PLACEHOLDER, HOMEBREW_LIBRARY.to_s)
     relocation.add_replacement_pair(:perl, PERL_PLACEHOLDER, "#{HOMEBREW_PREFIX}/opt/perl/bin/perl")
+    if (openjdk = openjdk_dep_name_if_applicable)
+      relocation.add_replacement_pair(:java, JAVA_PLACEHOLDER, "#{HOMEBREW_PREFIX}/opt/#{openjdk}/libexec")
+    end
+
     relocation
   end
   alias generic_prepare_relocation_to_locations prepare_relocation_to_locations
@@ -120,6 +131,14 @@ class Keg
     relocation = prepare_relocation_to_locations.freeze
     relocate_dynamic_linkage(relocation) unless skip_linkage
     replace_text_in_files(relocation, files: files)
+  end
+
+  def openjdk_dep_name_if_applicable
+    deps = runtime_dependencies
+    return if deps.blank?
+
+    dep_names = deps.map { |d| d["full_name"] }
+    dep_names.find { |d| d.match? Version.formula_optionally_versioned_regex(:openjdk) }
   end
 
   def replace_text_in_files(relocation, files: nil)
@@ -146,6 +165,45 @@ class Keg
     changed_files
   end
 
+  def relocate_build_prefix(keg, old_prefix, new_prefix)
+    each_unique_file_matching(old_prefix) do |file|
+      # Skip files which are not binary, as they do not need null padding.
+      next unless keg.binary_file?(file)
+
+      # Skip sharballs, which appear to break if patched.
+      next if file.text_executable?
+
+      # Split binary by null characters into array and substitute new prefix for old prefix.
+      # Null padding is added if the new string is too short.
+      file.ensure_writable do
+        binary = File.binread file
+        odebug "Replacing build prefix in: #{file}"
+        binary_strings = binary.split(/#{NULL_BYTE}/o, -1)
+        match_indices = binary_strings.each_index.select { |i| binary_strings[i].include?(old_prefix) }
+
+        # Only perform substitution on strings which match prefix regex.
+        match_indices.each do |i|
+          s = binary_strings[i]
+          binary_strings[i] = s.gsub(old_prefix, new_prefix)
+                               .ljust(s.size, NULL_BYTE)
+        end
+
+        # Rejoin strings by null bytes.
+        patched_binary = binary_strings.join(NULL_BYTE)
+        if patched_binary.size != binary.size
+          raise <<~EOS
+            Patching failed!  Original and patched binary sizes do not match.
+            Original size: #{binary.size}
+            Patched size: #{patched_binary.size}
+          EOS
+        end
+
+        file.atomic_write patched_binary
+      end
+      codesign_patched_binary(file)
+    end
+  end
+
   def detect_cxx_stdlibs(_options = {})
     []
   end
@@ -156,17 +214,41 @@ class Keg
   end
   alias generic_recursive_fgrep_args recursive_fgrep_args
 
+  def egrep_args
+    grep_bin = "grep"
+    grep_args = [
+      "--files-with-matches",
+      "--perl-regexp",
+      "--binary-files=text",
+    ]
+
+    [grep_bin, grep_args]
+  end
+  alias generic_egrep_args egrep_args
+
   def each_unique_file_matching(string)
     Utils.popen_read("fgrep", recursive_fgrep_args, string, to_s) do |io|
       hardlinks = Set.new
 
       until io.eof?
         file = Pathname.new(io.readline.chomp)
+        # Don't return symbolic links.
         next if file.symlink?
 
+        # To avoid returning hardlinks, only return files with unique inodes.
+        # Hardlinks will have the same inode as the file they point to.
         yield file if hardlinks.add? file.stat.ino
       end
     end
+  end
+
+  def binary_file?(file)
+    grep_bin, grep_args = egrep_args
+
+    # We need to pass NULL_BYTE_STRING, the literal string "\x00", to grep
+    # rather than NULL_BYTE, a literal null byte, because grep will internally
+    # convert the literal string "\x00" to a null byte.
+    Utils.popen_read(grep_bin, *grep_args, NULL_BYTE_STRING, file).present?
   end
 
   def lib
