@@ -38,11 +38,17 @@ class FormulaVersions
     end
   end
 
+  sig { params(rev: String).returns(String) }
   def file_contents_at_revision(rev)
     repository.cd { Utils.popen_read("git", "cat-file", "blob", "#{rev}:#{entry_name}") }
   end
 
-  def formula_at_revision(rev)
+  sig {
+    type_parameters(:U)
+      .params(rev: String, _block: T.proc.params(arg0: Formula).returns(T.type_parameter(:U)))
+      .returns(T.nilable(T.type_parameter(:U)))
+  }
+  def formula_at_revision(rev, &_block)
     Homebrew.raise_deprecation_exceptions = true
 
     yield @formula_at_revision[rev] ||= begin
@@ -57,5 +63,13 @@ class FormulaVersions
     nil
   ensure
     Homebrew.raise_deprecation_exceptions = false
+  end
+
+  def nostdout(&block)
+    if verbose?
+      yield
+    else
+      redirect_stdout(File::NULL, &block)
+    end
   end
 end

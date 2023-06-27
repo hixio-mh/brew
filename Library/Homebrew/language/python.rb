@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 module Language
@@ -7,10 +7,10 @@ module Language
   # @api public
   module Python
     def self.major_minor_version(python)
-      version = /\d\.\d+/.match `#{python} --version 2>&1`
+      version = `#{python} --version 2>&1`.chomp[/(\d\.\d+)/, 1]
       return unless version
 
-      Version.create(version.to_s)
+      Version.new(version)
     end
 
     def self.homebrew_site_packages(python = "python3.7")
@@ -26,7 +26,7 @@ module Language
     end
 
     def self.each_python(build, &block)
-      original_pythonpath = ENV["PYTHONPATH"]
+      original_pythonpath = ENV.fetch("PYTHONPATH", nil)
       pythons = { "python@3" => "python3",
                   "pypy"     => "pypy",
                   "pypy3"    => "pypy3" }
@@ -70,7 +70,7 @@ module Language
       quiet_system python, "-c", script
     end
 
-    def self.setup_install_args(prefix)
+    def self.setup_install_args(prefix, python = "python3")
       shim = <<~PYTHON
         import setuptools, tokenize
         __file__ = 'setup.py'
@@ -84,6 +84,7 @@ module Language
         install
         --prefix=#{prefix}
         --install-scripts=#{prefix}/bin
+        --install-lib=#{prefix/site_packages(python)}
         --single-version-externally-managed
         --record=installed.txt
       ]
@@ -102,22 +103,27 @@ module Language
         )
       end
 
-      def detected_python_shebang(formula = self)
-        python_deps = formula.deps.map(&:name).grep(/^python(@.*)?$/)
+      def detected_python_shebang(formula = self, use_python_from_path: false)
+        python_path = if use_python_from_path
+          "/usr/bin/env python3"
+        else
+          python_deps = formula.deps.map(&:name).grep(/^python(@.*)?$/)
 
-        raise ShebangDetectionError.new("Python", "formula does not depend on Python") if python_deps.empty?
-        if python_deps.length > 1
-          raise ShebangDetectionError.new("Python", "formula has multiple Python dependencies")
+          raise ShebangDetectionError.new("Python", "formula does not depend on Python") if python_deps.empty?
+          if python_deps.length > 1
+            raise ShebangDetectionError.new("Python", "formula has multiple Python dependencies")
+          end
+
+          python_dep = python_deps.first
+          Formula[python_dep].opt_bin/python_dep.sub("@", "")
         end
 
-        python_shebang_rewrite_info(Formula[python_deps.first].opt_bin/"python3")
+        python_shebang_rewrite_info(python_path)
       end
     end
 
     # Mixin module for {Formula} adding virtualenv support features.
     module Virtualenv
-      extend T::Sig
-
       # Instantiates, creates, and yields a {Virtualenv} object for use from
       # {Formula#install}, which provides helper methods for instantiating and
       # installing packages into a Python virtualenv.
@@ -174,7 +180,7 @@ module Language
       # formula preference for python or python@x.y, or to resolve an ambiguous
       # case where it's not clear whether python or python@x.y should be the
       # default guess.
-      def virtualenv_install_with_resources(using: nil, system_site_packages: true)
+      def virtualenv_install_with_resources(using: nil, system_site_packages: true, link_manpages: false)
         python = using
         if python.nil?
           wanted = python_names.select { |py| needs_python?(py) }
@@ -186,7 +192,7 @@ module Language
         end
         venv = virtualenv_create(libexec, python.delete("@"), system_site_packages: system_site_packages)
         venv.pip_install resources
-        venv.pip_install_and_link buildpath
+        venv.pip_install_and_link(buildpath, link_manpages: link_manpages)
         venv
       end
 
@@ -256,14 +262,14 @@ module Language
         #   Multiline strings are allowed and treated as though they represent
         #   the contents of a `requirements.txt`.
         # @return [void]
-        def pip_install(targets)
+        def pip_install(targets, build_isolation: true)
           targets = Array(targets)
           targets.each do |t|
             if t.respond_to? :stage
-              t.stage { do_install Pathname.pwd }
+              t.stage { do_install(Pathname.pwd, build_isolation: build_isolation) }
             else
               t = t.lines.map(&:strip) if t.respond_to?(:lines) && t.include?("\n")
-              do_install t
+              do_install(t, build_isolation: build_isolation)
             end
           end
         end
@@ -273,23 +279,35 @@ module Language
         #
         # @param (see #pip_install)
         # @return (see #pip_install)
-        def pip_install_and_link(targets)
+        def pip_install_and_link(targets, link_manpages: false, build_isolation: true)
           bin_before = Dir[@venv_root/"bin/*"].to_set
+          man_before = Dir[@venv_root/"share/man/man*/*"].to_set if link_manpages
 
-          pip_install(targets)
+          pip_install(targets, build_isolation: build_isolation)
 
           bin_after = Dir[@venv_root/"bin/*"].to_set
           bin_to_link = (bin_after - bin_before).to_a
           @formula.bin.install_symlink(bin_to_link)
+          return unless link_manpages
+
+          man_after = Dir[@venv_root/"share/man/man*/*"].to_set
+          man_to_link = (man_after - man_before).to_a
+          man_to_link.each do |manpage|
+            (@formula.man/Pathname.new(manpage).dirname.basename).install_symlink manpage
+          end
         end
 
         private
 
-        def do_install(targets)
+        def do_install(targets, build_isolation: true)
           targets = Array(targets)
-          @formula.system @venv_root/"bin/pip", "install",
-                          "-v", "--no-deps", "--no-binary", ":all:",
-                          "--ignore-installed", *targets
+          args = [
+            "-v", "--no-deps", "--no-binary", ":all:",
+            "--use-feature=no-binary-enable-wheel-cache",
+            "--ignore-installed"
+          ]
+          args << "--no-build-isolation" unless build_isolation
+          @formula.system @venv_root/"bin/pip", "install", *args, *targets
         end
       end
     end

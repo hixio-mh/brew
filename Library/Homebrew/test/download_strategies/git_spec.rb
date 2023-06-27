@@ -1,4 +1,3 @@
-# typed: false
 # frozen_string_literal: true
 
 require "download_strategy"
@@ -18,12 +17,15 @@ describe GitDownloadStrategy do
 
   def git_commit_all
     system "git", "add", "--all"
+    # Allow instance variables here to have nice commit messages.
+    # rubocop:disable RSpec/InstanceVariable
     system "git", "commit", "-m", "commit number #{@commit_id}"
     @commit_id += 1
+    # rubocop:enable RSpec/InstanceVariable
   end
 
   def setup_git_repo
-    system "git", "init"
+    system "git", "-c", "init.defaultBranch=master", "init"
     system "git", "remote", "add", "origin", "https://github.com/Homebrew/homebrew-foo"
     FileUtils.touch "README"
     git_commit_all

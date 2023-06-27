@@ -1,4 +1,3 @@
-# typed: false
 # frozen_string_literal: true
 
 require "cmd/shared_examples/args_parse"
@@ -14,7 +13,7 @@ describe "brew uses" do
       depends_on "bar"
     RUBY
 
-    expect { brew "uses", "--recursive", "foo" }
+    expect { brew "uses", "--eval-all", "--recursive", "foo" }
       .to output(/(bar\nbaz|baz\nbar)/).to_stdout
       .and not_to_output.to_stderr
       .and be_a_success

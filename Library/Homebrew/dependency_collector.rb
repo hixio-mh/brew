@@ -18,16 +18,29 @@ require "extend/cachable"
 # This class is used by `depends_on` in the formula DSL to turn dependency
 # specifications into the proper kinds of dependencies and requirements.
 class DependencyCollector
-  extend T::Sig
-
   extend Cachable
 
   attr_reader :deps, :requirements
 
   sig { void }
   def initialize
+    # Ensure this is synced with `initialize_dup` and `freeze` (excluding simple objects like integers and booleans)
     @deps = Dependencies.new
     @requirements = Requirements.new
+
+    init_global_dep_tree_if_needed!
+  end
+
+  def initialize_dup(other)
+    super
+    @deps = @deps.dup
+    @requirements = @requirements.dup
+  end
+
+  def freeze
+    @deps.freeze
+    @requirements.freeze
+    super
   end
 
   def add(spec)
@@ -36,6 +49,11 @@ class DependencyCollector
       @deps << dep
     when Requirement
       @requirements << dep
+    when nil
+      # no-op when we have a nil value
+      nil
+    else
+      raise ArgumentError, "DependencyCollector#add passed something that isn't a Dependency or Requirement!"
     end
     dep
   end
@@ -57,13 +75,19 @@ class DependencyCollector
     parse_spec(spec, Array(tags))
   end
 
+  sig { params(related_formula_names: T::Array[String]).returns(T.nilable(Dependency)) }
+  def gcc_dep_if_needed(related_formula_names); end
+
+  sig { params(related_formula_names: T::Array[String]).returns(T.nilable(Dependency)) }
+  def glibc_dep_if_needed(related_formula_names); end
+
   def git_dep_if_needed(tags)
     return if Utils::Git.available?
 
     Dependency.new("git", tags)
   end
 
-  def brewed_curl_dep_if_needed(tags)
+  def curl_dep_if_needed(tags)
     Dependency.new("curl", tags)
   end
 
@@ -99,6 +123,9 @@ class DependencyCollector
 
   private
 
+  sig { void }
+  def init_global_dep_tree_if_needed!; end
+
   def parse_spec(spec, tags)
     case spec
     when String
@@ -125,6 +152,8 @@ class DependencyCollector
   end
 
   def parse_symbol_spec(spec, tags)
+    # When modifying this list of supported requirements, consider
+    # whether Formulary::API_SUPPORTED_REQUIREMENTS should also be changed.
     case spec
     when :arch          then ArchRequirement.new(tags)
     when :codesign      then CodesignRequirement.new(tags)
@@ -148,8 +177,10 @@ class DependencyCollector
     strategy = spec.download_strategy
 
     if strategy <= HomebrewCurlDownloadStrategy
-      @deps << brewed_curl_dep_if_needed(tags)
+      @deps << curl_dep_if_needed(tags)
       parse_url_spec(spec.url, tags)
+    elsif strategy <= NoUnzipCurlDownloadStrategy
+      # ensure NoUnzip never adds any dependencies
     elsif strategy <= CurlDownloadStrategy
       parse_url_spec(spec.url, tags)
     elsif strategy <= GitDownloadStrategy
@@ -161,14 +192,13 @@ class DependencyCollector
     elsif strategy <= FossilDownloadStrategy
       Dependency.new("fossil", tags)
     elsif strategy <= BazaarDownloadStrategy
-      Dependency.new("bazaar", tags)
+      Dependency.new("breezy", tags)
     elsif strategy <= CVSDownloadStrategy
       cvs_dep_if_needed(tags)
     elsif strategy < AbstractDownloadStrategy
       # allow unknown strategies to pass through
     else
-      raise TypeError,
-            "#{strategy.inspect} is not an AbstractDownloadStrategy subclass"
+      raise TypeError, "#{strategy.inspect} is not an AbstractDownloadStrategy subclass"
     end
   end
 
@@ -180,7 +210,7 @@ class DependencyCollector
     when ".bz2"         then bzip2_dep_if_needed(tags)
     when ".lha", ".lzh" then Dependency.new("lha", tags)
     when ".lz"          then Dependency.new("lzip", tags)
-    when ".rar"         then Dependency.new("unrar", tags)
+    when ".rar"         then Dependency.new("libarchive", tags)
     when ".7z"          then Dependency.new("p7zip", tags)
     end
   end

@@ -3,6 +3,7 @@
 
 require "active_support/core_ext/array/access"
 require "rubocops/shared/helper_functions"
+require "shellwords"
 
 module RuboCop
   module Cop
@@ -65,7 +66,7 @@ module RuboCop
 
         def on_send(node)
           TARGET_METHODS.each do |target_class, target_method|
-            next unless node.method_name == target_method
+            next if node.method_name != target_method
 
             target_receivers = if target_class.nil?
               [nil, s(:const, nil, :Kernel), s(:const, nil, :Homebrew)]
@@ -113,7 +114,7 @@ module RuboCop
       class ExecShellMetacharacters < Base
         include HelperFunctions
 
-        MSG = "Don't use shell metacharacters in `exec`. "\
+        MSG = "Don't use shell metacharacters in `exec`. " \
               "Implement the logic in Ruby instead, using methods like `$stdout.reopen`."
 
         RESTRICT_ON_SEND = [:exec].freeze

@@ -6,8 +6,6 @@ require "extend/ENV/shared"
 
 # @api private
 module Stdenv
-  extend T::Sig
-
   include SharedEnvExtension
 
   # @private
@@ -21,14 +19,16 @@ module Stdenv
       build_bottle:    T.nilable(T::Boolean),
       bottle_arch:     T.nilable(String),
       testing_formula: T::Boolean,
+      debug_symbols:   T.nilable(T::Boolean),
     ).void
   }
-  def setup_build_environment(formula: nil, cc: nil, build_bottle: false, bottle_arch: nil, testing_formula: false)
+  def setup_build_environment(formula: nil, cc: nil, build_bottle: false, bottle_arch: nil, testing_formula: false,
+                              debug_symbols: false)
     super
 
     self["HOMEBREW_ENV"] = "std"
 
-    PATH.new(ENV["HOMEBREW_PATH"]).reverse_each { |p| prepend_path "PATH", p }
+    ORIGINAL_PATHS.reverse_each { |p| prepend_path "PATH", p }
     prepend_path "PATH", HOMEBREW_SHIMS_PATH/"shared"
 
     # Set the default pkg-config search path, overriding the built-in paths
@@ -37,7 +37,7 @@ module Stdenv
 
     self["MAKEFLAGS"] = "-j#{make_jobs}"
 
-    unless HOMEBREW_PREFIX.to_s == "/usr/local"
+    if HOMEBREW_PREFIX.to_s != "/usr/local"
       # /usr/local is already an -isystem and -L directory so we skip it
       self["CPPFLAGS"] = "-isystem#{HOMEBREW_PREFIX}/include"
       self["LDFLAGS"] = "-L#{HOMEBREW_PREFIX}/lib"
@@ -55,7 +55,14 @@ module Stdenv
     # Os is the default Apple uses for all its stuff so let's trust them
     define_cflags "-Os #{SAFE_CFLAGS_FLAGS}"
 
-    send(compiler)
+    begin
+      send(compiler)
+    rescue CompilerSelectionError
+      # We don't care if our compiler fails to build the formula during `brew test`.
+      raise unless testing_formula
+
+      send(DevelopmentTools.default_compiler)
+    end
 
     return unless cc&.match?(GNU_GCC_REGEXP)
 
@@ -179,7 +186,7 @@ module Stdenv
 
   # @private
   sig { params(map: T::Hash[Symbol, String]).void }
-  def set_cpu_cflags(map = Hardware::CPU.optimization_flags) # rubocop:disable Naming/AccessorMethodName
+  def set_cpu_cflags(map = Hardware::CPU.optimization_flags)
     set_cpu_flags(CC_FLAG_VARS, map)
   end
 

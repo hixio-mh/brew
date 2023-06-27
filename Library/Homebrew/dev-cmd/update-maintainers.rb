@@ -1,13 +1,13 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require "cli/parser"
 require "utils/github"
-require "dev-cmd/generate-man-completions"
+require "manpages"
+
+require "active_support/core_ext/hash/slice"
 
 module Homebrew
-  extend T::Sig
-
   module_function
 
   sig { returns(CLI::Parser) }
@@ -26,13 +26,16 @@ module Homebrew
 
     # We assume that only public members wish to be included in the README
     public_members = GitHub.public_member_usernames("Homebrew")
+    maintainers = GitHub.members_by_team("Homebrew", "maintainers")
+
+    HOMEBREW_MAINTAINER_JSON.write(maintainers.keys.to_json)
+    maintainer_json_relative_path = HOMEBREW_MAINTAINER_JSON.relative_path_from(HOMEBREW_REPOSITORY).to_s
 
     members = {
-      plc: GitHub.members_by_team("Homebrew", "plc"),
-      tsc: GitHub.members_by_team("Homebrew", "tsc"),
+      plc:         GitHub.members_by_team("Homebrew", "plc"),
+      tsc:         GitHub.members_by_team("Homebrew", "tsc"),
+      maintainers: maintainers,
     }
-    members[:other] = GitHub.members_by_team("Homebrew", "maintainers")
-                            .except(*members.values.map(&:keys).flatten.uniq)
 
     sentences = {}
     members.each do |group, hash|
@@ -48,18 +51,18 @@ module Homebrew
                   "\\1 is #{sentences[:plc]}.")
     content.gsub!(/(Homebrew's \[Technical Steering Committee.*) is .*\./,
                   "\\1 is #{sentences[:tsc]}.")
-    content.gsub!(/(Homebrew's other current maintainers are).*\./,
-                  "\\1 #{sentences[:other]}.")
+    content.gsub!(/(Homebrew's maintainers are).*\./,
+                  "\\1 #{sentences[:maintainers]}.")
 
     File.write(readme, content)
 
     diff = system_command "git", args: [
-      "-C", HOMEBREW_REPOSITORY, "diff", "--exit-code", "README.md"
+      "-C", HOMEBREW_REPOSITORY, "diff", "--exit-code", "README.md", maintainer_json_relative_path
     ]
     if diff.status.success?
-      puts "No changes to list of maintainers."
+      ofail "No changes to list of maintainers."
     else
-      Homebrew.regenerate_man_pages(preserve_date: true, quiet: true)
+      Manpages.regenerate_man_pages(quiet: true)
       puts "List of maintainers updated in the README and the generated man pages."
     end
   end

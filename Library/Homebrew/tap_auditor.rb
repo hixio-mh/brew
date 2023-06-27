@@ -6,10 +6,8 @@ module Homebrew
   #
   # @api private
   class TapAuditor
-    extend T::Sig
-
-    attr_reader :name, :path, :formula_names, :cask_tokens, :tap_audit_exceptions, :tap_style_exceptions,
-                :tap_pypi_formula_mappings, :problems
+    attr_reader :name, :path, :formula_names, :formula_aliases, :cask_tokens,
+                :tap_audit_exceptions, :tap_style_exceptions, :tap_pypi_formula_mappings, :problems
 
     sig { params(tap: Tap, strict: T.nilable(T::Boolean)).void }
     def initialize(tap, strict:)
@@ -21,6 +19,9 @@ module Homebrew
       @tap_pypi_formula_mappings = tap.pypi_formula_mappings
       @problems                  = []
 
+      @formula_aliases = tap.aliases.map do |formula_alias|
+        formula_alias.split("/").last
+      end
       @formula_names = tap.formula_names.map do |formula_name|
         formula_name.split("/").last
       end
@@ -51,7 +52,7 @@ module Homebrew
 
     sig { params(message: String).void }
     def problem(message)
-      @problems << ({ message: message, location: nil })
+      @problems << ({ message: message, location: nil, corrected: false })
     end
 
     private
@@ -68,7 +69,9 @@ module Homebrew
 
       list = list.keys if list.is_a? Hash
       invalid_formulae_casks = list.select do |formula_or_cask_name|
-        @formula_names.exclude?(formula_or_cask_name) && @cask_tokens.exclude?("#{@name}/#{formula_or_cask_name}")
+        formula_names.exclude?(formula_or_cask_name) &&
+          formula_aliases.exclude?(formula_or_cask_name) &&
+          cask_tokens.exclude?("#{@name}/#{formula_or_cask_name}")
       end
 
       return if invalid_formulae_casks.empty?

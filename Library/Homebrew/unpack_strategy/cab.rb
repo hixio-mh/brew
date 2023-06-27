@@ -4,11 +4,7 @@
 module UnpackStrategy
   # Strategy for unpacking Cabinet archives.
   class Cab
-    extend T::Sig
-
     include UnpackStrategy
-
-    using Magic
 
     sig { returns(T::Array[String]) }
     def self.extensions
@@ -23,7 +19,7 @@ module UnpackStrategy
     def extract_to_dir(unpack_dir, basename:, verbose:)
       system_command! "cabextract",
                       args:    ["-d", unpack_dir, "--", path],
-                      env:     { "PATH" => PATH.new(Formula["cabextract"].opt_bin, ENV["PATH"]) },
+                      env:     { "PATH" => PATH.new(Formula["cabextract"].opt_bin, ENV.fetch("PATH")) },
                       verbose: verbose
     end
 

@@ -4,11 +4,7 @@
 module UnpackStrategy
   # Strategy for unpacking zstd archives.
   class Zstd
-    extend T::Sig
-
     include UnpackStrategy
-
-    using Magic
 
     sig { returns(T::Array[String]) }
     def self.extensions
@@ -31,7 +27,7 @@ module UnpackStrategy
       quiet_flags = verbose ? [] : ["-q"]
       system_command! "unzstd",
                       args:    [*quiet_flags, "-T0", "--rm", "--", unpack_dir/basename],
-                      env:     { "PATH" => PATH.new(Formula["zstd"].opt_bin, ENV["PATH"]) },
+                      env:     { "PATH" => PATH.new(Formula["zstd"].opt_bin, ENV.fetch("PATH")) },
                       verbose: verbose
     end
   end

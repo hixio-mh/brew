@@ -1,9 +1,12 @@
 # typed: true
 # frozen_string_literal: true
 
-# The {Livecheck} class implements the DSL methods used in a formula's or cask's
-# `livecheck` block and stores related instance variables. Most of these methods
-# also return the related instance variable when no argument is provided.
+require "livecheck/constants"
+
+# The {Livecheck} class implements the DSL methods used in a formula's, cask's
+# or resource's `livecheck` block and stores related instance variables. Most
+# of these methods also return the related instance variable when no argument
+# is provided.
 #
 # This information is used by the `brew livecheck` command to control its
 # behavior. Example `livecheck` blocks can be found in the
@@ -11,19 +14,21 @@
 class Livecheck
   extend Forwardable
 
-  # A very brief description of why the formula/cask is skipped (e.g. `No longer
-  # developed or maintained`).
-  # @return [String, nil]
+  # A very brief description of why the formula/cask/resource is skipped (e.g.
+  # `No longer developed or maintained`).
+  sig { returns(T.nilable(String)) }
   attr_reader :skip_msg
 
-  def initialize(formula_or_cask)
-    @formula_or_cask = formula_or_cask
+  sig { params(package_or_resource: T.any(Cask::Cask, T.class_of(Formula), Resource)).void }
+  def initialize(package_or_resource)
+    @package_or_resource = package_or_resource
     @referenced_cask_name = nil
     @referenced_formula_name = nil
     @regex = nil
     @skip = false
     @skip_msg = nil
     @strategy = nil
+    @strategy_block = nil
     @url = nil
   end
 
@@ -31,17 +36,18 @@ class Livecheck
   # or returns the `@referenced_cask_name` instance variable when no argument
   # is provided. Inherited livecheck values from the referenced cask
   # (e.g. regex) can be overridden in the livecheck block.
-  #
-  # @param cask_name [String] name of cask to inherit livecheck info from
-  # @return [String, nil]
-  def cask(cask_name = nil)
+  sig {
+    params(
+      # Name of cask to inherit livecheck info from.
+      cask_name: String,
+    ).returns(T.nilable(String))
+  }
+  def cask(cask_name = T.unsafe(nil))
     case cask_name
     when nil
       @referenced_cask_name
     when String
       @referenced_cask_name = cask_name
-    else
-      raise TypeError, "Livecheck#cask expects a String"
     end
   end
 
@@ -49,54 +55,57 @@ class Livecheck
   # `String` or returns the `@referenced_formula_name` instance variable when
   # no argument is provided. Inherited livecheck values from the referenced
   # formula (e.g. regex) can be overridden in the livecheck block.
-  #
-  # @param formula_name [String] name of formula to inherit livecheck info from
-  # @return [String, nil]
-  def formula(formula_name = nil)
+  sig {
+    params(
+      # Name of formula to inherit livecheck info from.
+      formula_name: String,
+    ).returns(T.nilable(String))
+  }
+  def formula(formula_name = T.unsafe(nil))
     case formula_name
     when nil
       @referenced_formula_name
     when String
       @referenced_formula_name = formula_name
-    else
-      raise TypeError, "Livecheck#formula expects a String"
     end
   end
 
   # Sets the `@regex` instance variable to the provided `Regexp` or returns the
   # `@regex` instance variable when no argument is provided.
-  #
-  # @param pattern [Regexp] regex to use for matching versions in content
-  # @return [Regexp, nil]
-  def regex(pattern = nil)
+  sig {
+    params(
+      # Regex to use for matching versions in content.
+      pattern: Regexp,
+    ).returns(T.nilable(Regexp))
+  }
+  def regex(pattern = T.unsafe(nil))
     case pattern
     when nil
       @regex
     when Regexp
       @regex = pattern
-    else
-      raise TypeError, "Livecheck#regex expects a Regexp"
     end
   end
 
   # Sets the `@skip` instance variable to `true` and sets the `@skip_msg`
   # instance variable if a `String` is provided. `@skip` is used to indicate
-  # that the formula/cask should be skipped and the `skip_msg` very briefly
-  # describes why it is skipped (e.g. "No longer developed or maintained").
-  #
-  # @param skip_msg [String] string describing why the formula/cask is skipped
-  # @return [Boolean]
-  def skip(skip_msg = nil)
-    if skip_msg.is_a?(String)
-      @skip_msg = skip_msg
-    elsif skip_msg.present?
-      raise TypeError, "Livecheck#skip expects a String"
-    end
+  # that the formula/cask/resource should be skipped and the `skip_msg` very
+  # briefly describes why it is skipped (e.g. "No longer developed or
+  # maintained").
+  sig {
+    params(
+      # String describing why the formula/cask is skipped.
+      skip_msg: String,
+    ).returns(T::Boolean)
+  }
+  def skip(skip_msg = T.unsafe(nil))
+    @skip_msg = skip_msg if skip_msg.is_a?(String)
 
     @skip = true
   end
 
-  # Should `livecheck` skip this formula/cask?
+  # Should `livecheck` skip this formula/cask/resource?
+  sig { returns(T::Boolean) }
   def skip?
     @skip
   end
@@ -105,10 +114,14 @@ class Livecheck
   # the `@strategy` instance variable when no argument is provided. The strategy
   # symbols use snake case (e.g. `:page_match`) and correspond to the strategy
   # file name.
-  #
-  # @param symbol [Symbol] symbol for the desired strategy
-  # @return [Symbol, nil]
-  def strategy(symbol = nil, &block)
+  sig {
+    params(
+      # Symbol for the desired strategy.
+      symbol: Symbol,
+      block:  T.nilable(Proc),
+    ).returns(T.nilable(Symbol))
+  }
+  def strategy(symbol = T.unsafe(nil), &block)
     @strategy_block = block if block
 
     case symbol
@@ -116,35 +129,40 @@ class Livecheck
       @strategy
     when Symbol
       @strategy = symbol
-    else
-      raise TypeError, "Livecheck#strategy expects a Symbol"
     end
   end
 
+  sig { returns(T.nilable(Proc)) }
   attr_reader :strategy_block
 
   # Sets the `@url` instance variable to the provided argument or returns the
   # `@url` instance variable when no argument is provided. The argument can be
   # a `String` (a URL) or a supported `Symbol` corresponding to a URL in the
-  # formula/cask (e.g. `:stable`, `:homepage`, `:head`, `:url`).
-  # @param val [String, Symbol] URL to check for version information
-  # @return [String, nil]
-  def url(val = nil)
-    case val
+  # formula/cask/resource (e.g. `:stable`, `:homepage`, `:head`, `:url`).
+  sig {
+    params(
+      # URL to check for version information.
+      url: T.any(String, Symbol),
+    ).returns(T.nilable(T.any(String, Symbol)))
+  }
+  def url(url = T.unsafe(nil))
+    case url
     when nil
       @url
     when String, :head, :homepage, :stable, :url
-      @url = val
-    else
-      raise TypeError, "Livecheck#url expects a String or valid Symbol"
+      @url = url
+    when Symbol
+      raise ArgumentError, "#{url.inspect} is not a valid URL shorthand"
     end
   end
 
-  delegate version: :@formula_or_cask
-  private :version
+  delegate version: :@package_or_resource
+  delegate arch: :@package_or_resource
+  private :version, :arch
 
   # Returns a `Hash` of all instance variable values.
   # @return [Hash]
+  sig { returns(T::Hash[String, T.untyped]) }
   def to_hash
     {
       "cask"     => @referenced_cask_name,

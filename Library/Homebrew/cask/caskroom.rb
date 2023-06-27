@@ -8,18 +8,23 @@ module Cask
   #
   # @api private
   module Caskroom
-    extend T::Sig
-
     sig { returns(Pathname) }
     def self.path
       @path ||= HOMEBREW_PREFIX/"Caskroom"
     end
 
+    # Return all paths for installed casks.
+    sig { returns(T::Array[Pathname]) }
+    def self.paths
+      return [] unless path.exist?
+
+      path.children.select { |p| p.directory? && !p.symlink? }
+    end
+    private_class_method :paths
+
     sig { returns(T::Boolean) }
     def self.any_casks_installed?
-      return false unless path.exist?
-
-      path.children.select(&:directory?).any?
+      paths.any?
     end
 
     sig { void }
@@ -41,19 +46,14 @@ module Cask
 
     sig { params(config: T.nilable(Config)).returns(T::Array[Cask]) }
     def self.casks(config: nil)
-      return [] unless path.exist?
-
-      path.children.select(&:directory?).sort.map do |path|
+      paths.sort.map do |path|
         token = path.basename.to_s
 
         begin
-          if (tap_path = CaskLoader.tap_paths(token).first)
-            CaskLoader::FromTapPathLoader.new(tap_path).load(config: config)
-          elsif (caskroom_path = Pathname.glob(path.join(".metadata/*/*/*/*.rb")).first)
-            CaskLoader::FromPathLoader.new(caskroom_path).load(config: config)
-          else
-            CaskLoader.load(token, config: config)
-          end
+          CaskLoader.load(token, config: config)
+        rescue TapCaskAmbiguityError
+          tap_path = CaskLoader.tap_paths(token).first
+          CaskLoader::FromTapPathLoader.new(tap_path).load(config: config)
         rescue CaskUnavailableError
           # Don't blow up because of a single unavailable cask.
           nil

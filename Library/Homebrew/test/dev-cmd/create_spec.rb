@@ -1,4 +1,3 @@
-# typed: false
 # frozen_string_literal: true
 
 require "cmd/shared_examples/args_parse"
@@ -10,7 +9,7 @@ describe "brew create" do
   it_behaves_like "parseable arguments"
 
   it "creates a new Formula file for a given URL", :integration_test do
-    brew "create", url, "HOMEBREW_EDITOR" => "/bin/cat"
+    brew "create", "--set-name=Testball", url, "HOMEBREW_EDITOR" => "/bin/cat"
 
     expect(formula_file).to exist
     expect(formula_file.read).to match(%Q(sha256 "#{TESTBALL_SHA256}"))

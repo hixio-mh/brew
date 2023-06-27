@@ -4,11 +4,7 @@
 module UnpackStrategy
   # Strategy for unpacking archives with `unar`.
   class GenericUnar
-    extend T::Sig
-
     include UnpackStrategy
-
-    using Magic
 
     sig { returns(T::Array[String]) }
     def self.extensions
@@ -32,7 +28,7 @@ module UnpackStrategy
                         "-force-overwrite", "-quiet", "-no-directory",
                         "-output-directory", unpack_dir, "--", path
                       ],
-                      env:     { "PATH" => PATH.new(Formula["unar"].opt_bin, ENV["PATH"]) },
+                      env:     { "PATH" => PATH.new(Formula["unar"].opt_bin, ENV.fetch("PATH")) },
                       verbose: verbose
     end
   end

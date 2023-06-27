@@ -6,8 +6,6 @@ require "version"
 # @private
 class DevelopmentTools
   class << self
-    extend T::Sig
-
     sig { params(tool: String).returns(T.nilable(Pathname)) }
     def locate(tool)
       # Don't call tools (cc, make, strip, etc.) directly!
@@ -78,8 +76,8 @@ class DevelopmentTools
     end
 
     sig { params(cc: String).returns(Version) }
-    def non_apple_gcc_version(cc)
-      (@non_apple_gcc_version ||= {}).fetch(cc) do
+    def gcc_version(cc)
+      (@gcc_version ||= {}).fetch(cc) do
         path = HOMEBREW_PREFIX/"opt/#{CompilerSelector.preferred_gcc}/bin"/cc
         path = locate(cc) unless path.exist?
         version = if path &&
@@ -88,14 +86,29 @@ class DevelopmentTools
         else
           Version::NULL
         end
-        @non_apple_gcc_version[cc] = version
+        @gcc_version[cc] = version
       end
     end
 
     sig { void }
     def clear_version_cache
       @clang_version = @clang_build_version = nil
-      @non_apple_gcc_version = {}
+      @gcc_version = {}
+    end
+
+    sig { returns(T::Boolean) }
+    def needs_build_formulae?
+      needs_libc_formula? || needs_compiler_formula?
+    end
+
+    sig { returns(T::Boolean) }
+    def needs_libc_formula?
+      false
+    end
+
+    sig { returns(T::Boolean) }
+    def needs_compiler_formula?
+      false
     end
 
     sig { returns(T::Boolean) }
@@ -118,7 +131,7 @@ class DevelopmentTools
     sig { returns(T::Hash[String, T.nilable(String)]) }
     def build_system_info
       {
-        "os"         => ENV["HOMEBREW_SYSTEM"],
+        "os"         => HOMEBREW_SYSTEM,
         "os_version" => OS_VERSION,
         "cpu_family" => Hardware::CPU.family.to_s,
       }

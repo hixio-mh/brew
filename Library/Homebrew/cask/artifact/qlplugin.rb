@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require "cask/artifact/moved"
@@ -9,8 +9,6 @@ module Cask
     #
     # @api private
     class Qlplugin < Moved
-      extend T::Sig
-
       sig { returns(String) }
       def self.english_name
         "QuickLook Plugin"

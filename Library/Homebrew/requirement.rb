@@ -12,14 +12,16 @@ require "build_environment"
 #
 # @api private
 class Requirement
-  extend T::Sig
-
   include Dependable
   extend Cachable
 
-  attr_reader :tags, :name, :cask, :download
+  attr_reader :name, :cask, :download
 
   def initialize(tags = [])
+    # Only allow instances of subclasses. This base class enforces no constraints on its own.
+    # Individual subclasses use the `satisfy` DSL to define those constraints.
+    raise "Do not call `Requirement.new' directly without a subclass." unless self.class < Requirement
+
     @cask = self.class.cask
     @download = self.class.download
     tags.each do |tag|
@@ -103,7 +105,7 @@ class Requirement
     parent = satisfied_result_parent
     return unless parent
     return if ["#{HOMEBREW_PREFIX}/bin", "#{HOMEBREW_PREFIX}/bin"].include?(parent.to_s)
-    return if PATH.new(ENV["PATH"]).include?(parent.to_s)
+    return if PATH.new(ENV.fetch("PATH")).include?(parent.to_s)
 
     ENV.prepend_path("PATH", parent)
   end
@@ -122,7 +124,7 @@ class Requirement
   alias eql? ==
 
   def hash
-    name.hash ^ tags.hash
+    [self.class, name, tags].hash
   end
 
   sig { returns(String) }
@@ -141,9 +143,9 @@ class Requirement
   private
 
   def infer_name
-    klass = self.class.name || self.class.to_s
-    klass = klass.sub(/(Dependency|Requirement)$/, "")
-                 .sub(/^(\w+::)*/, "")
+    klass = self.class.name
+    klass = klass&.sub(/(Dependency|Requirement)$/, "")
+                 &.sub(/^(\w+::)*/, "")
     return klass.downcase if klass.present?
 
     return @cask if @cask.present?
@@ -160,8 +162,6 @@ class Requirement
   end
 
   class << self
-    extend T::Sig
-
     include BuildEnvironment::DSL
 
     attr_reader :env_proc, :build
