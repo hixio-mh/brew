@@ -1,4 +1,3 @@
-# typed: false
 # frozen_string_literal: true
 
 require "download_strategy"
@@ -25,13 +24,13 @@ describe AbstractDownloadStrategy do
     let(:specs) { { bottle: true } }
 
     it "extends Pourable" do
-      expect(strategy).to be_a_kind_of(AbstractDownloadStrategy::Pourable)
+      expect(strategy).to be_a(AbstractDownloadStrategy::Pourable)
     end
   end
 
   context "without specs[:bottle]" do
     it "is does not extend Pourable" do
-      expect(strategy).not_to be_a_kind_of(AbstractDownloadStrategy::Pourable)
+      expect(strategy).not_to be_a(AbstractDownloadStrategy::Pourable)
     end
   end
 end

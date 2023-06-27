@@ -9,8 +9,6 @@ require "utils/pypi"
 require "cask/cask_loader"
 
 module Homebrew
-  extend T::Sig
-
   module_function
 
   sig { returns(CLI::Parser) }
@@ -46,8 +44,8 @@ module Homebrew
       switch "--rust",
              description: "Create a basic template for a Rust build."
       switch "--no-fetch",
-             description: "Homebrew will not download <URL> to the cache and will thus not add its SHA-256 "\
-                          "to the formula for you, nor will it check the GitHub API for GitHub projects "\
+             description: "Homebrew will not download <URL> to the cache and will thus not add its SHA-256 " \
+                          "to the formula for you, nor will it check the GitHub API for GitHub projects " \
                           "(to fill out its description and homepage)."
       switch "--HEAD",
              description: "Indicate that <URL> points to the package's repository rather than a file."
@@ -85,14 +83,18 @@ module Homebrew
   end
 
   def create_cask(args:)
-    raise UsageError, "The `--set-name` flag is required for creating casks." if args.set_name.blank?
-
     url = args.named.first
-    name = args.set_name
-    token = Cask::Utils.token_from(args.set_name)
+    name = if args.set_name.blank?
+      stem = Pathname.new(url).stem.rpartition("=").last
+      print "Cask name [#{stem}]: "
+      __gets || stem
+    else
+      args.set_name
+    end
+    token = Cask::Utils.token_from(name)
 
     cask_tap = Tap.fetch(args.tap || "homebrew/cask")
-    raise TapUnavailableError, args.tap unless cask_tap.installed?
+    raise TapUnavailableError, cask_tap.name unless cask_tap.installed?
 
     cask_path = Cask::CaskLoader.path("#{cask_tap}/#{token}")
     cask_path.dirname.mkpath unless cask_path.dirname.exist?
@@ -139,13 +141,19 @@ module Homebrew
 
   def create_formula(args:)
     fc = FormulaCreator.new(args)
-    fc.name = args.set_name
+    fc.name = if args.set_name.blank?
+      stem = Pathname.new(args.named.first).stem.rpartition("=").last
+      print "Formula name [#{stem}]: "
+      __gets || stem
+    else
+      args.set_name
+    end
     fc.version = args.set_version
     fc.license = args.set_license
     fc.tap = Tap.fetch(args.tap || "homebrew/core")
-    raise TapUnavailableError, args.tap unless fc.tap.installed?
+    raise TapUnavailableError, fc.tap.name unless fc.tap.installed?
 
-    fc.url = args.named.first # Pull the first (and only) URL from ARGV
+    fc.url = args.named.first
 
     fc.mode = if args.autotools?
       :autotools
@@ -169,13 +177,6 @@ module Homebrew
       :rust
     end
 
-    if fc.name.nil? || fc.name.strip.empty?
-      stem = Pathname.new(fc.url).stem.rpartition("=").last
-      print "Formula name [#{stem}]: "
-      fc.name = __gets || stem
-      fc.update_path
-    end
-
     # Check for disallowed formula, or names that shadow aliases,
     # unless --force is specified.
     unless args.force?
@@ -187,19 +188,24 @@ module Homebrew
         EOS
       end
 
-      if Formula.aliases.include? fc.name
-        realname = Formulary.canonical_name(fc.name)
-        odie <<~EOS
-          The formula '#{realname}' is already aliased to '#{fc.name}'.
-          Please check that you are not creating a duplicate.
-          To force creation use `--force`.
-        EOS
+      Homebrew.with_no_api_env do
+        if Formula.aliases.include? fc.name
+          realname = Formulary.canonical_name(fc.name)
+          odie <<~EOS
+            The formula '#{realname}' is already aliased to '#{fc.name}'.
+            Please check that you are not creating a duplicate.
+            To force creation use `--force`.
+          EOS
+        end
       end
     end
 
     fc.generate!
 
-    PyPI.update_python_resources! Formula[fc.name], ignore_non_pypi_packages: true if args.python?
+    formula = Homebrew.with_no_api_env do
+      Formula[fc.name]
+    end
+    PyPI.update_python_resources! formula, ignore_non_pypi_packages: true if args.python?
 
     puts "Please run `brew audit --new #{fc.name}` before submitting, thanks."
     fc.path

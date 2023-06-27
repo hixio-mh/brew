@@ -1,4 +1,3 @@
-# typed: false
 # frozen_string_literal: true
 
 require "test/support/fixtures/testball"
@@ -14,6 +13,7 @@ describe Formula do
   alias_matcher :have_changed_alias, :be_alias_changed
 
   alias_matcher :have_option_defined, :be_option_defined
+  alias_matcher :have_post_install_defined, :be_post_install_defined
   alias_matcher :have_test_defined, :be_test_defined
   alias_matcher :pour_bottle, :be_pour_bottle
 
@@ -149,11 +149,19 @@ describe Formula do
       end
     end
 
-    it "returns true by default" do
-      FileUtils.touch f.path
-      FileUtils.touch f2.path
+    before do
+      # don't try to load/fetch gcc/glibc
+      allow(DevelopmentTools).to receive(:needs_libc_formula?).and_return(false)
+      allow(DevelopmentTools).to receive(:needs_compiler_formula?).and_return(false)
+
       allow(Formulary).to receive(:load_formula_from_path).with(f2.name, f2.path).and_return(f2)
       allow(Formulary).to receive(:factory).with(f2.name).and_return(f2)
+      allow(f.tap).to receive(:versioned_formula_files).and_return([f2.path])
+    end
+
+    it "returns array with versioned formulae" do
+      FileUtils.touch f.path
+      FileUtils.touch f2.path
       expect(f.versioned_formulae).to eq [f2]
     end
 
@@ -199,14 +207,14 @@ describe Formula do
   example "installed alias with tap" do
     tap = Tap.new("user", "repo")
     name = "foo"
-    path = "#{tap.path}/Formula/#{name}.rb"
+    path = tap.path/"Formula/#{name}.rb"
     f = formula name, path: path do
       url "foo-1.0"
     end
 
     build_values_with_no_installed_alias = [
       BuildOptions.new(Options.new, f.options),
-      Tab.new(source: { "path" => f.path }),
+      Tab.new(source: { "path" => f.path.to_s }),
     ]
     build_values_with_no_installed_alias.each do |build|
       f.build = build
@@ -237,7 +245,7 @@ describe Formula do
   specify "#prefix" do
     f = Testball.new
     expect(f.prefix).to eq(HOMEBREW_CELLAR/f.name/"0.1")
-    expect(f.prefix).to be_kind_of(Pathname)
+    expect(f.prefix).to be_a(Pathname)
   end
 
   example "revised prefix" do
@@ -262,7 +270,7 @@ describe Formula do
 
   specify "#migration_needed" do
     f = Testball.new("newname")
-    f.instance_variable_set(:@oldname, "oldname")
+    f.instance_variable_set(:@oldnames, ["oldname"])
     f.instance_variable_set(:@tap, CoreTap.instance)
 
     oldname_prefix = (HOMEBREW_CELLAR/"oldname/2.20")
@@ -290,17 +298,19 @@ describe Formula do
     let(:f) { Testball.new }
 
     it "returns false if the #latest_installed_prefix is not a directory" do
-      allow(f).to receive(:latest_installed_prefix).and_return(double(directory?: false))
+      allow(f).to receive(:latest_installed_prefix).and_return(instance_double(Pathname, directory?: false))
       expect(f).not_to be_latest_version_installed
     end
 
     it "returns false if the #latest_installed_prefix does not have children" do
-      allow(f).to receive(:latest_installed_prefix).and_return(double(directory?: true, children: []))
+      allow(f).to receive(:latest_installed_prefix)
+        .and_return(instance_double(Pathname, directory?: true, children: []))
       expect(f).not_to be_latest_version_installed
     end
 
     it "returns true if the #latest_installed_prefix has children" do
-      allow(f).to receive(:latest_installed_prefix).and_return(double(directory?: true, children: [double]))
+      allow(f).to receive(:latest_installed_prefix)
+        .and_return(instance_double(Pathname, directory?: true, children: [double]))
       expect(f).to be_latest_version_installed
     end
   end
@@ -446,40 +456,13 @@ describe Formula do
     end
   end
 
-  describe "::installed_formulae_with_no_dependents" do
-    let(:formula_is_dep) do
-      formula "foo" do
-        url "foo-1.1"
+  describe "::inreplace" do
+    specify "raises build error on failure" do
+      f = formula do
+        url "https://brew.sh/test-1.0.tbz"
       end
-    end
 
-    let(:formula_with_deps) do
-      formula "bar" do
-        url "bar-1.0"
-      end
-    end
-
-    let(:formulae) do
-      [
-        formula_with_deps,
-        formula_is_dep,
-      ]
-    end
-
-    before do
-      allow(formula_with_deps).to receive(:runtime_formula_dependencies).and_return([formula_is_dep])
-    end
-
-    specify "without formulae parameter" do
-      allow(described_class).to receive(:installed).and_return(formulae)
-
-      expect(described_class.installed_formulae_with_no_dependents)
-          .to eq([formula_with_deps])
-    end
-
-    specify "with formulae parameter" do
-      expect(described_class.installed_formulae_with_no_dependents(formulae))
-          .to eq([formula_with_deps])
+      expect { f.inreplace([]) }.to raise_error(BuildError)
     end
   end
 
@@ -563,8 +546,8 @@ describe Formula do
       url "foo-1.0"
     end
 
-    expect(f.class.stable).to be_kind_of(SoftwareSpec)
-    expect(f.class.head).to be_kind_of(SoftwareSpec)
+    expect(f.class.stable).to be_a(SoftwareSpec)
+    expect(f.class.head).to be_a(SoftwareSpec)
   end
 
   specify "instance specs have different references" do
@@ -654,6 +637,23 @@ describe Formula do
     expect(f.desc).to eq("a formula")
   end
 
+  specify "#post_install_defined?" do
+    f1 = formula do
+      url "foo-1.0"
+
+      def post_install
+        # do nothing
+      end
+    end
+
+    f2 = formula do
+      url "foo-1.0"
+    end
+
+    expect(f1).to have_post_install_defined
+    expect(f2).not_to have_post_install_defined
+  end
+
   specify "test fixtures" do
     f1 = formula do
       url "foo-1.0"
@@ -719,23 +719,24 @@ describe Formula do
         url "https://brew.sh/test-1.0.tbz"
       end
 
-      expect(f.service).to be_nil
+      expect(f.service.serialize).to eq({})
     end
 
     specify "service complicated" do
       f = formula do
         url "https://brew.sh/test-1.0.tbz"
-      end
 
-      f.class.service do
-        run [opt_bin/"beanstalkd"]
-        run_type :immediate
-        error_log_path var/"log/beanstalkd.error.log"
-        log_path var/"log/beanstalkd.log"
-        working_dir var
-        keep_alive true
+        service do
+          run [opt_bin/"beanstalkd"]
+          run_type :immediate
+          error_log_path var/"log/beanstalkd.error.log"
+          log_path var/"log/beanstalkd.log"
+          working_dir var
+          keep_alive true
+        end
       end
-      expect(f.service).not_to be_nil
+      expect(f.service.serialize.keys)
+        .to contain_exactly(:run, :run_type, :error_log_path, :log_path, :working_dir, :keep_alive)
     end
 
     specify "service uses simple run" do
@@ -746,7 +747,20 @@ describe Formula do
         end
       end
 
-      expect(f.service).not_to be_nil
+      expect(f.service.serialize.keys).to contain_exactly(:run, :run_type)
+    end
+
+    specify "service with only custom names" do
+      f = formula do
+        url "https://brew.sh/test-1.0.tbz"
+        service do
+          name macos: "custom.macos.beanstalkd", linux: "custom.linux.beanstalkd"
+        end
+      end
+
+      expect(f.plist_name).to eq("custom.macos.beanstalkd")
+      expect(f.service_name).to eq("custom.linux.beanstalkd")
+      expect(f.service.serialize.keys).to contain_exactly(:name)
     end
 
     specify "service helpers return data" do
@@ -756,13 +770,17 @@ describe Formula do
 
       expect(f.plist_name).to eq("homebrew.mxcl.formula_name")
       expect(f.service_name).to eq("homebrew.formula_name")
-      expect(f.plist_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.mxcl.formula_name.plist")
+      expect(f.launchd_service_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.mxcl.formula_name.plist")
       expect(f.systemd_service_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.formula_name.service")
       expect(f.systemd_timer_path).to eq(HOMEBREW_PREFIX/"opt/formula_name/homebrew.formula_name.timer")
     end
   end
 
   specify "dependencies" do
+    # don't try to load/fetch gcc/glibc
+    allow(DevelopmentTools).to receive(:needs_libc_formula?).and_return(false)
+    allow(DevelopmentTools).to receive(:needs_compiler_formula?).and_return(false)
+
     f1 = formula "f1" do
       url "f1-1.0"
     end
@@ -805,6 +823,10 @@ describe Formula do
     specify "runtime dependencies with optional deps from tap" do
       tap_loader = double
 
+      # don't try to load/fetch gcc/glibc
+      allow(DevelopmentTools).to receive(:needs_libc_formula?).and_return(false)
+      allow(DevelopmentTools).to receive(:needs_compiler_formula?).and_return(false)
+
       allow(tap_loader).to receive(:get_formula).and_raise(RuntimeError, "tried resolving tap formula")
       allow(Formulary).to receive(:loader_for).with("foo/bar/f1", from: nil).and_return(tap_loader)
       stub_formula_loader(formula("f2") { url("f2-1.0") }, "baz/qux/f2")
@@ -832,7 +854,7 @@ describe Formula do
       keg = Keg.for(formula.latest_installed_prefix)
       keg.link
 
-      linkage_checker = double("linkage checker", undeclared_deps: [dependency.name])
+      linkage_checker = instance_double(LinkageChecker, "linkage checker", undeclared_deps: [dependency.name])
       allow(LinkageChecker).to receive(:new).and_return(linkage_checker)
 
       expect(formula.runtime_dependencies.map(&:name)).to eq [dependency.name]
@@ -854,6 +876,10 @@ describe Formula do
   end
 
   specify "requirements" do
+    # don't try to load/fetch gcc/glibc
+    allow(DevelopmentTools).to receive(:needs_libc_formula?).and_return(false)
+    allow(DevelopmentTools).to receive(:needs_compiler_formula?).and_return(false)
+
     f1 = formula "f1" do
       url "f1-1"
 
@@ -877,7 +903,11 @@ describe Formula do
     end
 
     expect(Set.new(f2.recursive_requirements)).to eq(Set[])
-    expect(Set.new(f2.recursive_requirements {})).to eq(Set[xcode])
+    expect(
+      f2.recursive_requirements do
+        # do nothing
+      end.to_set,
+    ).to eq(Set[xcode])
 
     requirements = f2.recursive_requirements do |_dependent, requirement|
       Requirement.prune if requirement.is_a?(XcodeRequirement)
@@ -905,23 +935,97 @@ describe Formula do
     expect(h["versions"]["bottle"]).to be_truthy
   end
 
-  specify "#to_recursive_bottle_hash" do
-    f1 = formula "foo" do
-      url "foo-1.0"
+  describe "#to_hash_with_variations", :needs_macos do
+    let(:formula_path) { CoreTap.new.formula_dir/"foo-variations.rb" }
+    let(:formula_content) do
+      <<~RUBY
+        class FooVariations < Formula
+          url "file://#{TEST_FIXTURE_DIR}/tarballs/testball-0.1.tbz"
+          sha256 TESTBALL_SHA256
 
-      bottle do
-        sha256 cellar: :any, Utils::Bottles.tag.to_sym => TEST_SHA256
-        sha256 cellar: :any, foo:                         TEST_SHA256
-      end
+          on_intel do
+            depends_on "intel-formula"
+          end
+
+          on_big_sur do
+            depends_on "big-sur-formula"
+          end
+
+          on_catalina :or_older do
+            depends_on "catalina-or-older-formula"
+          end
+
+          on_linux do
+            depends_on "linux-formula"
+          end
+        end
+      RUBY
+    end
+    let(:expected_variations) do
+      <<~JSON
+        {
+          "monterey": {
+            "dependencies": [
+              "intel-formula"
+            ]
+          },
+          "big_sur": {
+            "dependencies": [
+              "intel-formula",
+              "big-sur-formula"
+            ]
+          },
+          "arm64_big_sur": {
+            "dependencies": [
+              "big-sur-formula"
+            ]
+          },
+          "catalina": {
+            "dependencies": [
+              "intel-formula",
+              "catalina-or-older-formula"
+            ]
+          },
+          "mojave": {
+            "dependencies": [
+              "intel-formula",
+              "catalina-or-older-formula"
+            ]
+          },
+          "x86_64_linux": {
+            "dependencies": [
+              "intel-formula",
+              "linux-formula"
+            ]
+          }
+        }
+      JSON
     end
 
-    h = f1.to_recursive_bottle_hash
+    before do
+      # Use a more limited symbols list to shorten the variations hash
+      symbols = {
+        monterey: "12",
+        big_sur:  "11",
+        catalina: "10.15",
+        mojave:   "10.14",
+      }
+      stub_const("MacOSVersion::SYMBOLS", symbols)
 
-    expect(h).to be_a(Hash)
-    expect(h["name"]).to eq "foo"
-    expect(h["bottles"].keys).to eq [Utils::Bottles.tag.to_s, "x86_64_foo"]
-    expect(h["bottles"][Utils::Bottles.tag.to_s].keys).to eq ["url"]
-    expect(h["dependencies"]).to eq []
+      # For consistency, always run on Monterey and ARM
+      allow(MacOS).to receive(:version).and_return(MacOSVersion.new("12"))
+      allow(Hardware::CPU).to receive(:type).and_return(:arm)
+
+      formula_path.dirname.mkpath
+      formula_path.write formula_content
+    end
+
+    it "returns the correct variations hash" do
+      h = Formulary.factory("foo-variations").to_hash_with_variations
+
+      expect(h).to be_a(Hash)
+      expect(JSON.pretty_generate(h["variations"])).to eq expected_variations.strip
+    end
   end
 
   describe "#eligible_kegs_for_cleanup" do
@@ -1121,6 +1225,7 @@ describe Formula do
 
     let(:tab) { Tab.empty }
     let(:alias_path) { "#{CoreTap.instance.alias_dir}/bar" }
+    let(:alias_name) { "bar" }
 
     before do
       allow(described_class).to receive(:installed).and_return([f])
@@ -1142,7 +1247,7 @@ describe Formula do
 
     specify "alias changes when not changed" do
       tab.source["path"] = alias_path
-      stub_formula_loader(f, alias_path)
+      stub_formula_loader(f, alias_name)
 
       CoreTap.instance.alias_dir.mkpath
       FileUtils.ln_sf f.path, alias_path
@@ -1157,7 +1262,7 @@ describe Formula do
 
     specify "alias changes when new alias target" do
       tab.source["path"] = alias_path
-      stub_formula_loader(new_formula, alias_path)
+      stub_formula_loader(new_formula, alias_name)
 
       CoreTap.instance.alias_dir.mkpath
       FileUtils.ln_sf new_formula.path, alias_path
@@ -1172,7 +1277,7 @@ describe Formula do
 
     specify "alias changes when old formulae installed" do
       tab.source["path"] = alias_path
-      stub_formula_loader(new_formula, alias_path)
+      stub_formula_loader(new_formula, alias_name)
 
       CoreTap.instance.alias_dir.mkpath
       FileUtils.ln_sf new_formula.path, alias_path
@@ -1213,6 +1318,7 @@ describe Formula do
     end
 
     let(:alias_path) { "#{f.tap.alias_dir}/bar" }
+    let(:alias_name) { "bar" }
 
     def setup_tab_for_prefix(prefix, options = {})
       prefix.mkpath
@@ -1251,14 +1357,14 @@ describe Formula do
     example "outdated follow alias and alias unchanged" do
       f.follow_installed_alias = true
       f.build = setup_tab_for_prefix(same_prefix, path: alias_path)
-      stub_formula_loader(f, alias_path)
+      stub_formula_loader(f, alias_name)
       expect(f.outdated_kegs).to be_empty
     end
 
     example "outdated follow alias and alias changed and new target not installed" do
       f.follow_installed_alias = true
       f.build = setup_tab_for_prefix(same_prefix, path: alias_path)
-      stub_formula_loader(new_formula, alias_path)
+      stub_formula_loader(new_formula, alias_name)
 
       CoreTap.instance.alias_dir.mkpath
       FileUtils.ln_sf new_formula.path, alias_path
@@ -1269,7 +1375,7 @@ describe Formula do
     example "outdated follow alias and alias changed and new target installed" do
       f.follow_installed_alias = true
       f.build = setup_tab_for_prefix(same_prefix, path: alias_path)
-      stub_formula_loader(new_formula, alias_path)
+      stub_formula_loader(new_formula, alias_name)
       setup_tab_for_prefix(new_formula.prefix)
       expect(f.outdated_kegs).to be_empty
     end
@@ -1277,7 +1383,7 @@ describe Formula do
     example "outdated no follow alias and alias unchanged" do
       f.follow_installed_alias = false
       f.build = setup_tab_for_prefix(same_prefix, path: alias_path)
-      stub_formula_loader(f, alias_path)
+      stub_formula_loader(f, alias_name)
       expect(f.outdated_kegs).to be_empty
     end
 
@@ -1410,7 +1516,7 @@ describe Formula do
         testball_repo.cd do
           FileUtils.touch "LICENSE"
 
-          system("git", "init")
+          system("git", "-c", "init.defaultBranch=master", "init")
           system("git", "add", "--all")
           system("git", "commit", "-m", "Initial commit")
         end
@@ -1538,10 +1644,10 @@ describe Formula do
   describe "#on_macos", :needs_macos do
     let(:f) do
       Class.new(Testball) do
-        @test = 0
         attr_reader :test
 
         def install
+          @test = 0
           on_macos do
             @test = 1
           end
@@ -1561,10 +1667,10 @@ describe Formula do
   describe "#on_linux", :needs_linux do
     let(:f) do
       Class.new(Testball) do
-        @test = 0
         attr_reader :test
 
         def install
+          @test = 0
           on_macos do
             @test = 1
           end
@@ -1578,6 +1684,200 @@ describe Formula do
     it "only calls code within on_linux" do
       f.brew { f.install }
       expect(f.test).to eq(2)
+    end
+  end
+
+  describe "#on_system" do
+    let(:f) do
+      Class.new(Testball) do
+        attr_reader :foo
+        attr_reader :bar
+
+        def install
+          @foo = 0
+          @bar = 0
+          on_system :linux, macos: :monterey do
+            @foo = 1
+          end
+          on_system :linux, macos: :big_sur_or_older do
+            @bar = 1
+          end
+        end
+      end.new
+    end
+
+    it "doesn't call code on Ventura", :needs_macos do
+      Homebrew::SimulateSystem.with os: :ventura do
+        f.brew { f.install }
+        expect(f.foo).to eq(0)
+        expect(f.bar).to eq(0)
+      end
+    end
+
+    it "calls code on Linux", :needs_linux do
+      Homebrew::SimulateSystem.with os: :linux do
+        f.brew { f.install }
+        expect(f.foo).to eq(1)
+        expect(f.bar).to eq(1)
+      end
+    end
+
+    it "calls code within `on_system :linux, macos: :monterey` on Monterey", :needs_macos do
+      Homebrew::SimulateSystem.with os: :monterey do
+        f.brew { f.install }
+        expect(f.foo).to eq(1)
+        expect(f.bar).to eq(0)
+      end
+    end
+
+    it "calls code within `on_system :linux, macos: :big_sur_or_older` on Big Sur", :needs_macos do
+      Homebrew::SimulateSystem.with os: :big_sur do
+        f.brew { f.install }
+        expect(f.foo).to eq(0)
+        expect(f.bar).to eq(1)
+      end
+    end
+
+    it "calls code within `on_system :linux, macos: :big_sur_or_older` on Catalina", :needs_macos do
+      Homebrew::SimulateSystem.with os: :catalina do
+        f.brew { f.install }
+        expect(f.foo).to eq(0)
+        expect(f.bar).to eq(1)
+      end
+    end
+  end
+
+  describe "on_{os_version} blocks", :needs_macos do
+    let(:f) do
+      Class.new(Testball) do
+        attr_reader :test
+
+        def install
+          @test = 0
+          on_monterey :or_newer do
+            @test = 1
+          end
+          on_big_sur do
+            @test = 2
+          end
+          on_catalina :or_older do
+            @test = 3
+          end
+        end
+      end.new
+    end
+
+    it "only calls code within `on_monterey`" do
+      Homebrew::SimulateSystem.with os: :monterey do
+        f.brew { f.install }
+        expect(f.test).to eq(1)
+      end
+    end
+
+    it "only calls code within `on_monterey :or_newer`" do
+      Homebrew::SimulateSystem.with os: :ventura do
+        f.brew { f.install }
+        expect(f.test).to eq(1)
+      end
+    end
+
+    it "only calls code within `on_big_sur`" do
+      Homebrew::SimulateSystem.with os: :big_sur do
+        f.brew { f.install }
+        expect(f.test).to eq(2)
+      end
+    end
+
+    it "only calls code within `on_catalina`" do
+      Homebrew::SimulateSystem.with os: :catalina do
+        f.brew { f.install }
+        expect(f.test).to eq(3)
+      end
+    end
+
+    it "only calls code within `on_catalina :or_older`" do
+      Homebrew::SimulateSystem.with os: :mojave do
+        f.brew { f.install }
+        expect(f.test).to eq(3)
+      end
+    end
+  end
+
+  describe "#on_arm" do
+    before do
+      allow(Hardware::CPU).to receive(:type).and_return(:arm)
+    end
+
+    let(:f) do
+      Class.new(Testball) do
+        attr_reader :test
+
+        def install
+          @test = 0
+          on_arm do
+            @test = 1
+          end
+          on_intel do
+            @test = 2
+          end
+        end
+      end.new
+    end
+
+    it "only calls code within on_arm" do
+      f.brew { f.install }
+      expect(f.test).to eq(1)
+    end
+  end
+
+  describe "#on_intel" do
+    before do
+      allow(Hardware::CPU).to receive(:type).and_return(:intel)
+    end
+
+    let(:f) do
+      Class.new(Testball) do
+        attr_reader :test
+
+        def install
+          @test = 0
+          on_arm do
+            @test = 1
+          end
+          on_intel do
+            @test = 2
+          end
+        end
+      end.new
+    end
+
+    it "only calls code within on_intel" do
+      f.brew { f.install }
+      expect(f.test).to eq(2)
+    end
+  end
+
+  describe "#generate_completions_from_executable" do
+    let(:f) do
+      Class.new(Testball) do
+        def install
+          bin.mkpath
+          (bin/"foo").write <<-EOF
+            echo completion
+          EOF
+
+          FileUtils.chmod "+x", bin/"foo"
+
+          generate_completions_from_executable(bin/"foo", "test")
+        end
+      end.new
+    end
+
+    it "generates completion scripts" do
+      f.brew { f.install }
+      expect(f.bash_completion/"testball").to be_a_file
+      expect(f.zsh_completion/"_testball").to be_a_file
+      expect(f.fish_completion/"testball.fish").to be_a_file
     end
   end
 end

@@ -5,8 +5,6 @@ require "formula"
 require "cli/parser"
 
 module Homebrew
-  extend T::Sig
-
   module_function
 
   sig { returns(CLI::Parser) }
@@ -27,7 +25,7 @@ module Homebrew
 
       conflicts "--dry-run", "--write-only"
 
-      named_args :formula, min: 1
+      named_args :formula, min: 1, without_api: true
     end
   end
 
@@ -36,7 +34,7 @@ module Homebrew
 
     # As this command is simplifying user-run commands then let's just use a
     # user path, too.
-    ENV["PATH"] = ENV["HOMEBREW_PATH"]
+    ENV["PATH"] = PATH.new(ORIGINAL_PATHS).to_s
 
     args.named.to_formulae.each do |formula|
       current_revision = formula.revision

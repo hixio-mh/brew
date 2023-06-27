@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require "dependable"
@@ -7,13 +7,11 @@ require "dependable"
 #
 # @api private
 class Dependency
-  extend T::Sig
-
   extend Forwardable
   include Dependable
   extend Cachable
 
-  attr_reader :name, :tags, :env_proc, :option_names
+  attr_reader :name, :env_proc, :option_names
 
   DEFAULT_ENV_PROC = proc {}.freeze
   private_constant :DEFAULT_ENV_PROC
@@ -37,7 +35,7 @@ class Dependency
   alias eql? ==
 
   def hash
-    name.hash ^ tags.hash
+    [name, tags].hash
   end
 
   def to_formula
@@ -46,20 +44,11 @@ class Dependency
     formula
   end
 
-  def unavailable_core_formula?
-    to_formula
-    false
-  rescue CoreTapFormulaUnavailableError
-    true
-  rescue
-    false
-  end
-
   def installed?
     to_formula.latest_version_installed?
   end
 
-  def satisfied?(inherited_options)
+  def satisfied?(inherited_options = [])
     installed? && missing_options(inherited_options).empty?
   end
 
@@ -91,14 +80,12 @@ class Dependency
   end
 
   class << self
-    extend T::Sig
-
     # Expand the dependencies of each dependent recursively, optionally yielding
     # `[dependent, dep]` pairs to allow callers to apply arbitrary filters to
     # the list.
     # The default filter, which is applied when a block is not given, omits
     # optionals and recommendeds based on what the dependent has asked for
-    def expand(dependent, deps = dependent.deps, cache_key: nil, ignore_missing: false, &block)
+    def expand(dependent, deps = dependent.deps, cache_key: nil, &block)
       # Keep track dependencies to avoid infinite cyclic dependency recursion.
       @expand_stack ||= []
       @expand_stack.push dependent.name
@@ -112,22 +99,20 @@ class Dependency
 
       deps.each do |dep|
         next if dependent.name == dep.name
-        # avoid downloading build dependency bottles
-        next if dep.build? && dependent.pour_bottle? && Homebrew::EnvConfig.install_from_api?
 
-        case action(dependent, dep, ignore_missing: ignore_missing, &block)
+        case action(dependent, dep, &block)
         when :prune
           next
         when :skip
           next if @expand_stack.include? dep.name
 
-          expanded_deps.concat(expand(dep.to_formula, cache_key: cache_key, ignore_missing: ignore_missing, &block))
+          expanded_deps.concat(expand(dep.to_formula, cache_key: cache_key, &block))
         when :keep_but_prune_recursive_deps
           expanded_deps << dep
         else
           next if @expand_stack.include? dep.name
 
-          expanded_deps.concat(expand(dep.to_formula, cache_key: cache_key, ignore_missing: ignore_missing, &block))
+          expanded_deps.concat(expand(dep.to_formula, cache_key: cache_key, &block))
           expanded_deps << dep
         end
       end
@@ -139,10 +124,8 @@ class Dependency
       @expand_stack.pop
     end
 
-    def action(dependent, dep, ignore_missing: false, &block)
+    def action(dependent, dep, &block)
       catch(:action) do
-        prune if ignore_missing && dep.unavailable_core_formula?
-
         if block
           yield dependent, dep
         elsif dep.optional? || dep.recommended?

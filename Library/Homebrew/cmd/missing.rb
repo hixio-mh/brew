@@ -7,8 +7,6 @@ require "diagnostic"
 require "cli/parser"
 
 module Homebrew
-  extend T::Sig
-
   module_function
 
   sig { returns(CLI::Parser) }
@@ -20,7 +18,7 @@ module Homebrew
         to be missing dependencies.
       EOS
       comma_array "--hide",
-                  description: "Act as if none of the specified <hidden> are installed. <hidden> should be "\
+                  description: "Act as if none of the specified <hidden> are installed. <hidden> should be " \
                                "a comma-separated list of formulae."
 
       named_args :formula

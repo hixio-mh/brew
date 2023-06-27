@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 require "deprecate_disable"
@@ -35,31 +35,32 @@ module Homebrew
       @specs = %w[stable head].map { |s| formula.send(s) }.compact
       @spdx_license_data = options[:spdx_license_data]
       @spdx_exception_data = options[:spdx_exception_data]
+      @tap_audit = options[:tap_audit]
     end
 
     def audit_style
       return unless @style_offenses
 
       @style_offenses.each do |offense|
-        correction_status = "#{Tty.green}[Corrected]#{Tty.reset} " if offense.corrected?
-
         cop_name = "#{offense.cop_name}: " if @display_cop_names
-        message = "#{cop_name}#{correction_status}#{offense.message}"
+        message = "#{cop_name}#{offense.message}"
 
-        problem message, location: offense.location
+        problem message, location: offense.location, corrected: offense.corrected?
       end
     end
 
     def audit_file
       if formula.core_formula? && @versioned_formula
+        unversioned_name = formula.name.gsub(/@.*$/, "")
+
+        # ignore when an unversioned formula doesn't exist after an explicit rename
+        return if formula.tap.formula_renames.key?(unversioned_name)
+
+        # build this ourselves as we want e.g. homebrew/core to be present
+        full_name = "#{formula.tap}/#{unversioned_name}"
+
         unversioned_formula = begin
-          # build this ourselves as we want e.g. homebrew/core to be present
-          full_name = if formula.tap
-            "#{formula.tap}/#{formula.name}"
-          else
-            formula.name
-          end
-          Formulary.factory(full_name.gsub(/@.*$/, "")).path
+          Formulary.factory(full_name).path
         rescue FormulaUnavailableError, TapFormulaAmbiguityError,
                TapFormulaWithOldnameAmbiguityError
           Pathname.new formula.path.to_s.gsub(/@.*\.rb$/, ".rb")
@@ -194,6 +195,13 @@ module Homebrew
       if formula.license.present?
         licenses, exceptions = SPDX.parse_license_expression formula.license
 
+        sspl_licensed = licenses.any? { |license| license.to_s.start_with?("SSPL") }
+        if sspl_licensed && @core_tap
+          problem <<~EOS
+            Formula #{formula.name} is SSPL-licensed. Software under the SSPL must not be packaged in homebrew/core.
+          EOS
+        end
+
         non_standard_licenses = licenses.reject { |license| SPDX.valid_license? license }
         if non_standard_licenses.present?
           problem <<~EOS
@@ -307,6 +315,13 @@ module Homebrew
             EOS
           end
 
+          if dep_f.deprecated? && !formula.deprecated? && !formula.disabled?
+            problem <<~EOS
+              Dependency '#{dep.name}' is deprecated but has un-deprecated dependents. Either
+              un-deprecate '#{dep.name}' or deprecate it and all of its dependents.
+            EOS
+          end
+
           # we want to allow uses_from_macos for aliases but not bare dependencies
           if self.class.aliases.include?(dep.name) && spec.uses_from_macos_names.exclude?(dep.name)
             problem "Dependency '#{dep.name}' is an alias; use the canonical name '#{dep.to_formula.full_name}'."
@@ -329,7 +344,22 @@ module Homebrew
 
       # The number of conflicts on Linux is absurd.
       # TODO: remove this and check these there too.
-      return if OS.linux? && !Homebrew::EnvConfig.simulate_macos_on_linux?
+      return if Homebrew::SimulateSystem.simulating_or_running_on_linux?
+
+      # Skip the versioned dependencies conflict audit for OpenSSL on the OpenSSL migration staging branch.
+      # TODO: Remove this when OpenSSL migration is complete.
+      ignore_openssl_conflict = if @tap_audit && (github_event_path = ENV.fetch("GITHUB_EVENT_PATH", nil)).present?
+        event_payload = JSON.parse(File.read(github_event_path))
+        base_info = event_payload.dig("pull_request", "base").to_h # handle `nil`
+
+        # We need to read the head ref from `GITHUB_EVENT_PATH` because
+        # `git branch --show-current` returns `master` on PR branches.
+        openssl_migration_branch = base_info["ref"] == "openssl-migration-staging"
+        homebrew_owned_repo = base_info.dig("repo", "owner", "login") == "Homebrew"
+        homebrew_core_pr = base_info.dig("repo", "name") == "homebrew-core"
+
+        openssl_migration_branch && homebrew_owned_repo && homebrew_core_pr
+      end
 
       recursive_runtime_formulae = formula.runtime_formula_dependencies(undeclared: false)
       version_hash = {}
@@ -337,6 +367,11 @@ module Homebrew
       recursive_runtime_formulae.each do |f|
         name = f.name
         unversioned_name, = name.split("@")
+        next if unversioned_name == "openssl" && ignore_openssl_conflict
+        # Allow use of the full versioned name (e.g. `python@3.99`) or an unversioned alias (`python`).
+        next if formula.tap&.audit_exception :versioned_formula_dependent_conflicts_allowlist, name
+        next if formula.tap&.audit_exception :versioned_formula_dependent_conflicts_allowlist, unversioned_name
+
         version_hash[unversioned_name] ||= Set.new
         version_hash[unversioned_name] << name
         next if version_hash[unversioned_name].length < 2
@@ -371,7 +406,7 @@ module Homebrew
                   "canonical name (#{conflicting_formula.name}) instead of #{conflict.name}"
         end
 
-        reverse_conflict_found = false
+        reverse_conflict_found = T.let(false, T::Boolean)
         conflicting_formula.conflicts.each do |reverse_conflict|
           reverse_conflict_formula = Formulary.factory(reverse_conflict.name)
           if tap.formula_renames.key?(reverse_conflict.name) || tap.aliases.include?(reverse_conflict.name)
@@ -394,8 +429,23 @@ module Homebrew
       end
     end
 
+    def audit_gcc_dependency
+      return unless @core_tap
+      return if !@strict && !(@git && formula.tap.git?) # git log is required for non-strict audit
+      return unless Homebrew::SimulateSystem.simulating_or_running_on_linux?
+      return unless linux_only_gcc_dep?(formula)
+
+      bad_gcc_dep = @strict || begin
+        fv = FormulaVersions.new(formula)
+        fv.formula_at_revision("origin/HEAD") { |prev_f| !linux_only_gcc_dep?(prev_f) }
+      end
+      return unless bad_gcc_dep
+
+      problem "Formulae in homebrew/core should not have a Linux-only dependency on GCC."
+    end
+
     def audit_postgresql
-      return unless formula.name == "postgresql"
+      return if formula.name != "postgresql"
       return unless @core_tap
 
       major_version = formula.version.major.to_i
@@ -410,15 +460,14 @@ module Homebrew
     end
 
     def audit_glibc
-      return if formula.name != "glibc"
       return unless @core_tap
+      return if formula.name != "glibc"
+      # Also allow LINUX_GLIBC_NEXT_CI_VERSION for when we're upgrading.
+      return if [OS::LINUX_GLIBC_CI_VERSION, OS::LINUX_GLIBC_NEXT_CI_VERSION].include?(formula.version.to_s)
 
-      version = formula.version.to_s
-      return if version == OS::CI_GLIBC_VERSION
-
-      problem "The glibc version must be #{version}, as this is the version used by our CI on Linux. " \
-              "Glibc is for users who have a system Glibc with a lower version, " \
-              "which allows them to use our Linux bottles, which were compiled against system Glibc on CI."
+      problem "The glibc version must be #{OS::LINUX_GLIBC_CI_VERSION}, as needed by our CI on Linux. " \
+              "The glibc formula is for users who have a system glibc with a lower version, " \
+              "which allows them to use our Linux bottles, which were compiled against system glibc on CI."
     end
 
     ELASTICSEARCH_KIBANA_RELICENSED_VERSION = "7.11"
@@ -430,6 +479,16 @@ module Homebrew
 
       problem "Elasticsearch and Kibana were relicensed to a non-open-source license from version 7.11. " \
               "They must not be upgraded to version 7.11 or newer."
+    end
+
+    def audit_keg_only_reason
+      return unless @core_tap
+      return unless formula.keg_only?
+
+      keg_only_message = text.to_s.match(/keg_only\s+["'](.*)["']/)&.captures&.first
+      return unless keg_only_message&.include?("HOMEBREW_PREFIX")
+
+      problem "`keg_only` reason should not include `HOMEBREW_PREFIX` as it creates confusing `brew info` output."
     end
 
     def audit_versioned_keg_only
@@ -457,17 +516,14 @@ module Homebrew
 
       return unless DevelopmentTools.curl_handles_most_https_certificates?
 
-      use_homebrew_curl = false
-      %w[Stable HEAD].each do |name|
-        spec_name = name.downcase.to_sym
-        next unless (spec = formula.send(spec_name))
+      use_homebrew_curl = [:stable, :head].any? do |spec_name|
+        next false unless (spec = formula.send(spec_name))
 
-        use_homebrew_curl = spec.using == :homebrew_curl
-        break if use_homebrew_curl
+        spec.using == :homebrew_curl
       end
 
       if (http_content_problem = curl_check_http_content(homepage,
-                                                         "homepage URL",
+                                                         SharedAudits::URL_TYPE_HOMEPAGE,
                                                          user_agents:       [:browser, :default],
                                                          check_content:     true,
                                                          strict:            @strict,
@@ -691,16 +747,16 @@ module Homebrew
       current_revision = formula.revision
       current_url = formula.stable.url
 
-      previous_version = nil
-      previous_version_scheme = nil
-      previous_revision = nil
+      previous_version = T.let(nil, T.nilable(Version))
+      previous_version_scheme = T.let(nil, T.nilable(Integer))
+      previous_revision = T.let(nil, T.nilable(Integer))
 
-      newest_committed_version = nil
-      newest_committed_checksum = nil
-      newest_committed_revision = nil
-      newest_committed_url = nil
+      newest_committed_version = T.let(nil, T.nilable(Version))
+      newest_committed_checksum = T.let(nil, T.nilable(String))
+      newest_committed_revision = T.let(nil, T.nilable(Integer))
+      newest_committed_url = T.let(nil, T.nilable(String))
 
-      fv.rev_list("origin/master") do |rev|
+      fv.rev_list("origin/HEAD") do |rev|
         begin
           fv.formula_at_revision(rev) do |f|
             stable = f.stable
@@ -716,7 +772,7 @@ module Homebrew
             newest_committed_revision ||= previous_revision
             newest_committed_url ||= stable.url
           end
-        rescue MacOSVersionError
+        rescue MacOSVersion::Error
           break
         end
 
@@ -832,16 +888,42 @@ module Homebrew
 
     private
 
-    def problem(message, location: nil)
-      @problems << ({ message: message, location: location })
+    def problem(message, location: nil, corrected: false)
+      @problems << ({ message: message, location: location, corrected: corrected })
     end
 
-    def new_formula_problem(message, location: nil)
-      @new_formula_problems << ({ message: message, location: location })
+    def new_formula_problem(message, location: nil, corrected: false)
+      @new_formula_problems << ({ message: message, location: location, corrected: corrected })
     end
 
     def head_only?(formula)
       formula.head && formula.stable.nil?
+    end
+
+    def linux_only_gcc_dep?(formula)
+      odie "`#linux_only_gcc_dep?` works only on Linux!" if Homebrew::SimulateSystem.simulating_or_running_on_macos?
+      return false if formula.deps.map(&:name).exclude?("gcc")
+
+      variations = formula.to_hash_with_variations["variations"]
+      # The formula has no variations, so all OS-version-arch triples depend on GCC.
+      return false if variations.blank?
+
+      MacOSVersion::SYMBOLS.keys.product(OnSystem::ARCH_OPTIONS).each do |os, arch|
+        bottle_tag = Utils::Bottles::Tag.new(system: os, arch: arch)
+        next unless bottle_tag.valid_combination?
+
+        variation_dependencies = variations.dig(bottle_tag.to_sym, "dependencies")
+        # This variation either:
+        #   1. does not exist
+        #   2. has no variation-specific dependencies
+        # In either case, it matches Linux. We must check for `nil` because an empty
+        # array indicates that this variation does not depend on GCC.
+        return false if variation_dependencies.nil?
+        # We found a non-Linux variation that depends on GCC.
+        return false if variation_dependencies.include?("gcc")
+      end
+
+      true
     end
   end
 end

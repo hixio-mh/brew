@@ -1,14 +1,11 @@
 # typed: true
 # frozen_string_literal: true
 
-require "ostruct"
 require "caveats"
 require "cli/parser"
 require "unlink"
 
 module Homebrew
-  extend T::Sig
-
   module_function
 
   sig { returns(CLI::Parser) }
@@ -22,7 +19,7 @@ module Homebrew
       switch "--overwrite",
              description: "Delete files that already exist in the prefix while linking."
       switch "-n", "--dry-run",
-             description: "List files which would be linked or deleted by "\
+             description: "List files which would be linked or deleted by " \
                           "`brew link --overwrite` without actually linking or deleting any files."
       switch "-f", "--force",
              description: "Allow keg-only formulae to be linked."

@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 # {Pathname} extension for dealing with ELF files.
@@ -48,7 +48,7 @@ module ELFShim
 
   def elf?
     return @elf if defined? @elf
-    return @elf = false unless read(MAGIC_NUMBER_ASCII.size, MAGIC_NUMBER_OFFSET) == MAGIC_NUMBER_ASCII
+    return @elf = false if read(MAGIC_NUMBER_ASCII.size, MAGIC_NUMBER_OFFSET) != MAGIC_NUMBER_ASCII
 
     # Check that this ELF file is for Linux or System V.
     # OS_ABI is often set to 0 (System V), regardless of the target platform.
@@ -97,7 +97,7 @@ module ELFShim
   # An array of runtime search path entries, such as:
   # ["/lib", "/usr/lib", "/usr/local/lib"]
   def rpaths
-    rpath.split(":")
+    Array(rpath&.split(":"))
   end
 
   def interpreter

@@ -4,11 +4,7 @@
 module UnpackStrategy
   # Strategy for unpacking P7ZIP archives.
   class P7Zip
-    extend T::Sig
-
     include UnpackStrategy
-
-    using Magic
 
     sig { returns(T::Array[String]) }
     def self.extensions
@@ -29,7 +25,7 @@ module UnpackStrategy
     def extract_to_dir(unpack_dir, basename:, verbose:)
       system_command! "7zr",
                       args:    ["x", "-y", "-bd", "-bso0", path, "-o#{unpack_dir}"],
-                      env:     { "PATH" => PATH.new(Formula["p7zip"].opt_bin, ENV["PATH"]) },
+                      env:     { "PATH" => PATH.new(Formula["p7zip"].opt_bin, ENV.fetch("PATH")) },
                       verbose: verbose
     end
   end

@@ -1,4 +1,7 @@
-# FAQ
+# FAQ (Frequently Asked Questions)
+
+* Table of Contents
+{:toc}
 
 ## Is there a glossary of terms around?
 
@@ -78,10 +81,10 @@ Homebrew provides pre-built binary packages for many formulae. These are referre
 
 If available, bottled binaries will be used by default except under the following conditions:
 
-* Options were passed to the install command, i.e. `brew install <formula>` will use a bottled version of the formula, but `brew install --enable-bar <formula>` will trigger a source build.
 * The `--build-from-source` option is invoked.
 * No bottle is available for the machine's currently running OS version. (Bottles for macOS are generated only for supported macOS versions.)
 * Homebrew is installed to a prefix other than the default (although some bottles support this).
+* Formula options were passed to the install command. For example, `brew install <formula>` will try to find a bottled binary, but `brew install --with-foo <formula>` will trigger a source build.
 
 We aim to bottle everything.
 
@@ -138,6 +141,8 @@ If all maintainer feedback has been addressed and all tests are passing, bump it
 ## Can I edit formulae myself?
 
 Yes! It’s easy! Just `brew edit <formula>`. You don’t have to submit modifications back to `homebrew/core`, just edit the formula to what you personally need and `brew install <formula>`. As a bonus, `brew update` will merge your changes with upstream so you can still keep the formula up-to-date **with** your personal modifications!
+
+Note that if you are editing a core formula or cask you must set `HOMEBREW_NO_INSTALL_FROM_API=1` before using `brew install` or `brew update` otherwise they will ignore your local changes and default to the API.
 
 ## Can I make new formulae?
 
@@ -215,3 +220,9 @@ Or use the `--greedy` flag:
     brew upgrade --greedy
 
 Refer to the `upgrade` section of the [`brew` manual page](Manpage.md) for more details.
+
+## Why do my cask apps lose their Dock position / Launchpad position / permission settings when I run `brew upgrade`?
+
+Homebrew has two possible strategies to update cask apps: uninstalling the old version and reinstalling the new one, or replacing the contents of the app with the new contents. With the uninstall/reinstall strategy, [macOS thinks the app is being deleted without any intent to reinstall it](https://github.com/Homebrew/brew/pull/15138), and so it removes some internal metadata for the old app, including where it appears in the Dock and Launchpad and which permissions it's been granted. The content replacement strategy works around this by treating the upgrade as an in-place upgrade. However, starting in macOS Ventura, these in-place upgrades are only allowed when the updater application (in this case, the terminal running Homebrew) has [certain permissions granted](https://github.com/Homebrew/brew/pull/15483). Either the "App Management" or "Full Disk Access" permission will suffice.
+
+Homebrew defaults to in-place upgrades when it has the necessary permissions. Otherwise, it will use the uninstall/reinstall strategy.

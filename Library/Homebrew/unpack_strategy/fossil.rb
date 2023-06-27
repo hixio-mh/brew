@@ -6,12 +6,8 @@ require "system_command"
 module UnpackStrategy
   # Strategy for unpacking Fossil repositories.
   class Fossil
-    extend T::Sig
-
     include UnpackStrategy
     extend SystemCommand::Mixin
-
-    using Magic
 
     sig { returns(T::Array[String]) }
     def self.extensions
@@ -39,7 +35,7 @@ module UnpackStrategy
       system_command! "fossil",
                       args:    ["open", path, *args],
                       chdir:   unpack_dir,
-                      env:     { "PATH" => PATH.new(Formula["fossil"].opt_bin, ENV["PATH"]) },
+                      env:     { "PATH" => PATH.new(Formula["fossil"].opt_bin, ENV.fetch("PATH")) },
                       verbose: verbose
     end
   end

@@ -19,8 +19,6 @@ module Homebrew
       #
       # @api private
       class ExtractPlist
-        extend T::Sig
-
         # A priority of zero causes livecheck to skip the strategy. We do this
         # for {ExtractPlist} so we can selectively apply it when appropriate.
         PRIORITY = 0
@@ -43,8 +41,6 @@ module Homebrew
           :bundle_version,
           keyword_init: true,
         ) do
-          extend T::Sig
-
           extend Forwardable
 
           # @api public
@@ -64,7 +60,7 @@ module Homebrew
           params(
             items: T::Hash[String, Item],
             regex: T.nilable(Regexp),
-            block: T.untyped,
+            block: T.nilable(Proc),
           ).returns(T::Array[String])
         }
         def self.versions_from_items(items, regex = nil, &block)
@@ -82,25 +78,40 @@ module Homebrew
         # versions from `plist` files.
         #
         # @param cask [Cask::Cask] the cask to check for version information
+        # @param url [String, nil] an alternative URL to check for version
+        #   information
         # @param regex [Regexp, nil] a regex for use in a strategy block
         # @return [Hash]
         sig {
           params(
             cask:    Cask::Cask,
+            url:     T.nilable(String),
             regex:   T.nilable(Regexp),
             _unused: T.nilable(T::Hash[Symbol, T.untyped]),
-            block:   T.untyped,
+            block:   T.nilable(Proc),
           ).returns(T::Hash[Symbol, T.untyped])
         }
-        def self.find_versions(cask:, regex: nil, **_unused, &block)
+        def self.find_versions(cask:, url: nil, regex: nil, **_unused, &block)
           if regex.present? && block.blank?
-            raise ArgumentError, "#{T.must(name).demodulize} only supports a regex when using a `strategy` block"
+            raise ArgumentError,
+                  "#{Utils.demodulize(T.must(name))} only supports a regex when using a `strategy` block"
           end
-          raise ArgumentError, "The #{T.must(name).demodulize} strategy only supports casks." unless T.unsafe(cask)
+          unless T.unsafe(cask)
+            raise ArgumentError, "The #{Utils.demodulize(T.must(name))} strategy only supports casks."
+          end
 
-          match_data = { matches: {}, regex: regex }
+          match_data = { matches: {}, regex: regex, url: url }
 
-          unversioned_cask_checker = UnversionedCaskChecker.new(cask)
+          unversioned_cask_checker = if url.present? && url != cask.url.to_s
+            # Create a copy of the `cask` that uses the `livecheck` block URL
+            cask_copy = Cask::CaskLoader.load(cask.full_name)
+            cask_copy.allow_reassignment = true
+            cask_copy.url { url }
+            UnversionedCaskChecker.new(cask_copy)
+          else
+            UnversionedCaskChecker.new(cask)
+          end
+
           items = unversioned_cask_checker.all_versions.transform_values { |v| Item.new(bundle_version: v) }
 
           versions_from_items(items, regex, &block).each do |version_text|

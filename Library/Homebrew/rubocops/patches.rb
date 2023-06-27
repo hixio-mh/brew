@@ -1,8 +1,7 @@
 # typed: true
 # frozen_string_literal: true
 
-require "rubocops/extend/formula"
-require "extend/string"
+require "rubocops/extend/formula_cop"
 
 module RuboCop
   module Cop
@@ -10,11 +9,12 @@ module RuboCop
       # This cop audits `patch`es in formulae.
       # TODO: Many of these could be auto-corrected.
       class Patches < FormulaCop
-        extend T::Sig
         extend AutoCorrector
 
         def audit_formula(node, _class_node, _parent_class_node, body)
           @full_source_content = source_buffer(node).source
+
+          return if body.nil?
 
           external_patches = find_all_blocks(body, :patch)
           external_patches.each do |patch_block|

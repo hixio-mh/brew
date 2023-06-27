@@ -1,4 +1,4 @@
-#:  * `shellenv`
+#:  * `shellenv [bash|csh|fish|pwsh|sh|tcsh|zsh]`
 #:
 #:  Print export statements. When run in a shell, this installation of Homebrew will be added to your `PATH`, `MANPATH`, and `INFOPATH`.
 #:
@@ -6,9 +6,13 @@
 #:  To help guarantee idempotence, this command produces no output when Homebrew's `bin` and `sbin` directories are first and second
 #:  respectively in your `PATH`. Consider adding evaluation of this command's output to your dotfiles (e.g. `~/.profile`,
 #:  `~/.bash_profile`, or `~/.zprofile`) with: `eval "$(brew shellenv)"`
+#:
+#:  The shell can be specified explicitly with a supported shell name parameter. Unknown shells will output POSIX exports.
 
 # HOMEBREW_CELLAR and HOMEBREW_PREFIX are set by extend/ENV/super.rb
 # HOMEBREW_REPOSITORY is set by bin/brew
+# Trailing colon in MANPATH adds default man dirs to search path in Linux, does no harm in macOS.
+# Please do not submit PRs to remove it!
 # shellcheck disable=SC2154
 homebrew-shellenv() {
   if [[ "${HOMEBREW_PATH%%:"${HOMEBREW_PREFIX}"/sbin*}" == "${HOMEBREW_PREFIX}/bin" ]]
@@ -16,7 +20,14 @@ homebrew-shellenv() {
     return
   fi
 
-  case "$(/bin/ps -p "${PPID}" -c -o comm=)" in
+  if [[ -n "$1" ]]
+  then
+    HOMEBREW_SHELL_NAME="$1"
+  else
+    HOMEBREW_SHELL_NAME="$(/bin/ps -p "${PPID}" -c -o comm=)"
+  fi
+
+  case "${HOMEBREW_SHELL_NAME}" in
     fish | -fish)
       echo "set -gx HOMEBREW_PREFIX \"${HOMEBREW_PREFIX}\";"
       echo "set -gx HOMEBREW_CELLAR \"${HOMEBREW_CELLAR}\";"

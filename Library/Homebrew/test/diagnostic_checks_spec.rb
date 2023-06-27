@@ -1,4 +1,3 @@
-# typed: false
 # frozen_string_literal: true
 
 require "diagnostic"
@@ -9,21 +8,6 @@ describe Homebrew::Diagnostic::Checks do
   specify "#inject_file_list" do
     expect(checks.inject_file_list([], "foo:\n")).to eq("foo:\n")
     expect(checks.inject_file_list(%w[/a /b], "foo:\n")).to eq("foo:\n  /a\n  /b\n")
-  end
-
-  specify "#check_for_anaconda" do
-    mktmpdir do |path|
-      anaconda = "#{path}/anaconda"
-      python = "#{path}/python"
-      FileUtils.touch anaconda
-      File.write(python, "#! #{`which bash`}\necho -n '#{python}'\n")
-      FileUtils.chmod 0755, anaconda
-      FileUtils.chmod 0755, python
-
-      ENV["PATH"] = "#{path}#{File::PATH_SEPARATOR}#{ENV["PATH"]}"
-
-      expect(checks.check_for_anaconda).to match("Anaconda")
-    end
   end
 
   specify "#check_access_directories" do
@@ -75,10 +59,12 @@ describe Homebrew::Diagnostic::Checks do
 
   specify "#check_user_path_3" do
     sbin = HOMEBREW_PREFIX/"sbin"
-    ENV["HOMEBREW_PATH"] =
+    (sbin/"something").mkpath
+
+    homebrew_path =
       "#{HOMEBREW_PREFIX}/bin#{File::PATH_SEPARATOR}" +
       ENV["HOMEBREW_PATH"].gsub(/(?:^|#{Regexp.escape(File::PATH_SEPARATOR)})#{Regexp.escape(sbin)}/, "")
-    (sbin/"something").mkpath
+    stub_const("ORIGINAL_PATHS", PATH.new(homebrew_path).map { |path| Pathname.new(path).expand_path }.compact)
 
     expect(checks.check_user_path_1).to be_nil
     expect(checks.check_user_path_2).to be_nil
@@ -86,19 +72,6 @@ describe Homebrew::Diagnostic::Checks do
       .to match("Homebrew's \"sbin\" was not found in your PATH")
   ensure
     sbin.rmtree
-  end
-
-  specify "#check_for_config_scripts" do
-    mktmpdir do |path|
-      file = "#{path}/foo-config"
-      FileUtils.touch file
-      FileUtils.chmod 0755, file
-      ENV["HOMEBREW_PATH"] = ENV["PATH"] =
-        "#{path}#{File::PATH_SEPARATOR}#{ENV["PATH"]}"
-
-      expect(checks.check_for_config_scripts)
-        .to match('"config" scripts exist')
-    end
   end
 
   specify "#check_for_symlinked_cellar" do
@@ -140,5 +113,25 @@ describe Homebrew::Diagnostic::Checks do
     allow(Homebrew).to receive(:default_prefix?).and_return(false)
     expect(checks.check_homebrew_prefix)
       .to match("Your Homebrew's prefix is not #{Homebrew::DEFAULT_PREFIX}")
+  end
+
+  specify "#check_for_unnecessary_core_tap" do
+    ENV.delete("HOMEBREW_DEVELOPER")
+    ENV.delete("HOMEBREW_NO_INSTALL_FROM_API")
+
+    allow(CoreTap).to receive(:installed?).and_return(true)
+
+    expect(checks.check_for_unnecessary_core_tap).to match("You have an unnecessary local Core tap")
+  end
+
+  specify "#check_for_unnecessary_cask_tap" do
+    ENV.delete("HOMEBREW_DEVELOPER")
+    ENV.delete("HOMEBREW_NO_INSTALL_FROM_API")
+
+    cask_tap = Tap.new("homebrew", "cask")
+    allow(Tap).to receive(:fetch).with("homebrew", "cask").and_return(cask_tap)
+    allow(cask_tap).to receive(:installed?).and_return(true)
+
+    expect(checks.check_for_unnecessary_cask_tap).to match("unnecessary local Cask tap")
   end
 end
