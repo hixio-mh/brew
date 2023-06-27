@@ -31,7 +31,11 @@ jobs:
         uses: Homebrew/actions/setup-homebrew@master
 
       - name: Cache Bundler RubyGems
+dependabot/bundler/Library/Homebrew/sorbet-static-and-runtime-0.5.10696
+        uses: actions/cache@v3.0.4
+
         uses: actions/cache@v3
+ master
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
           key: ${{ runner.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -73,7 +77,11 @@ jobs:
         uses: Homebrew/actions/setup-homebrew@master
 
       - name: Cache Bundler RubyGems
+dependabot/bundler/Library/Homebrew/sorbet-static-and-runtime-0.5.10696
+        uses: actions/cache@v3.0.4
+
         uses: actions/cache@v3
+ master
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
           key: ${{ runner.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -268,7 +276,11 @@ jobs:
         uses: Homebrew/actions/setup-homebrew@master
 
       - name: Cache Bundler RubyGems
+dependabot/bundler/Library/Homebrew/sorbet-static-and-runtime-0.5.10696
+        uses: actions/cache@v3.0.4
+
         uses: actions/cache@v3
+ master
         with:
           path: ${{ steps.set-up-homebrew.outputs.gems-path }}
           key: ${{ runner.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -277,7 +289,24 @@ jobs:
       - name: Install Bundler RubyGems
         run: brew install-bundler-gems
 
+dependabot/bundler/Library/Homebrew/sorbet-static-and-runtime-0.5.10696
+      - name: Create parallel test log directory
+        run: mkdir tests
+
+      - name: Cache parallel tests log
+        uses: actions/cache@v3.0.4
+        with:
+          path: tests
+          key: ${{ runner.os }}-${{ matrix.test-flags }}-parallel_runtime_rspec-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-${{ matrix.test-flags }}-parallel_runtime_rspec-
+
+      - name: Install brew tests dependencies
+        run: brew install curl
+
+      - name: Run brew tests
+
       - name: Run brew update-tests
+ master
         run: |
           brew update-test
           brew update-test --to-tag
@@ -326,7 +355,11 @@ jobs:
         run: mkdir tests
 
       - name: Cache parallel tests log
+dependabot/bundler/Library/Homebrew/sorbet-static-and-runtime-0.5.10696
+        uses: actions/cache@v3.0.4
+
         uses: actions/cache@v3
+master
         with:
           path: tests
           key: ${{ runner.os }}-${{ matrix.test-flags }}-parallel_runtime_rspec-${{ github.sha }}

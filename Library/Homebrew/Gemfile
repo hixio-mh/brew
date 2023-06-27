@@ -49,6 +49,11 @@ end
 gem "activesupport"
 gem "addressable"
 gem "concurrent-ruby"
+ dependabot/bundler/Library/Homebrew/sorbet-static-and-runtime-0.5.10696
+gem "did_you_mean" # remove when HOMEBREW_REQUIRED_RUBY_VERSION >= 2.7
+gem "mechanize", ">= 2.8.1"
+
+master
 gem "patchelf"
 gem "plist"
 gem "rubocop-performance"
