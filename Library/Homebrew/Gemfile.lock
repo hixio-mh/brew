@@ -48,8 +48,9 @@ GEM
       parser
       rainbow (~> 3.0)
       sorbet-runtime (>= 0.5)
-    parser (3.2.2.1)
+    parser (3.2.2.3)
       ast (~> 2.4.1)
+      racc
     patchelf (1.4.0)
       elftools (>= 1.2)
     plist (3.7.0)
@@ -57,6 +58,7 @@ GEM
       coderay (~> 1.1)
       method_source (~> 1.0)
     public_suffix (5.0.1)
+    racc (1.7.1)
     rack (3.0.8)
     rainbow (3.1.1)
     rbi (0.0.14)
@@ -66,7 +68,7 @@ GEM
       unparser
     rdiscount (2.2.7.1)
     regexp_parser (2.8.1)
-    rexml (3.2.5)
+    rexml (3.2.6)
     ronn (0.7.3)
       hpricot (>= 0.8.2)
       mustache (>= 0.7.0)
@@ -119,7 +121,7 @@ GEM
     rubocop-rspec (2.20.0)
       rubocop (~> 1.33)
       rubocop-capybara (~> 2.17)
-    rubocop-sorbet (0.7.0)
+    rubocop-sorbet (0.7.1)
       rubocop (>= 0.90.0)
     ruby-macho (3.0.0)
     ruby-prof (1.4.3)
