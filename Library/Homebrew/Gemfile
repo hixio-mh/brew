@@ -49,6 +49,11 @@ end
 gem "activesupport"
 gem "addressable"
 gem "concurrent-ruby"
+ dependabot/github_actions/codecov/codecov-action-3.1.1
+gem "did_you_mean" # remove when HOMEBREW_REQUIRED_RUBY_VERSION >= 2.7
+gem "mechanize", ">= 2.8.1"
+
+ master
 gem "patchelf"
 gem "plist"
 gem "rubocop-performance"
